@@ -5,9 +5,12 @@ CC_SANDBOX_PREFIX="${CC_SANDBOX_PREFIX:-}"
 CC_SANDBOX_IMAGE="${CC_SANDBOX_IMAGE:-${CC_SANDBOX_PREFIX}claude-code}"
 CC_SANDBOX_NETWORK="${CC_SANDBOX_NETWORK:-${CC_SANDBOX_PREFIX}claude-code-network}"
 CC_SANDBOX_INTERNAL_NETWORK="${CC_SANDBOX_INTERNAL_NETWORK:-${CC_SANDBOX_PREFIX}claude-code-internal-network}"
-CC_SANDBOX_VOLUME_PREFIX="${CC_SANDBOX_VOLUME_PREFIX:-${CC_SANDBOX_PREFIX}claude-code-}"
 CC_SANDBOX_PROXY_CONTAINER="${CC_SANDBOX_PROXY_CONTAINER:-${CC_SANDBOX_PREFIX}claude-code-proxy}"
 CC_SANDBOX_USER="${CC_SANDBOX_USER:-${CC_SANDBOX_PREFIX}claude}"
+CC_SANDBOX_DOTCLAUDE="${CC_SANDBOX_DOTCLAUDE:-${HOME}/.${CC_SANDBOX_PREFIX}claude-in-sandbox}"
+CC_SANDBOX_DOTCONFIG="${CC_SANDBOX_DOTCONFIG:-${HOME}/.config/${CC_SANDBOX_PREFIX}claude-in-sandbox-config}"
+CC_SANDBOX_SHARE_MISE_VOLUME="${CC_SANDBOX_SHARE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-share-mise}"
+CC_SANDBOX_STATE_MISE_VOLUME="${CC_SANDBOX_STATE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-state-mise}"
 
 get_script_dir() {
   # BASH_SOURCE が使えるならそれを優先（bash/zsh）
@@ -33,13 +36,13 @@ get_script_dir() {
 
 # イメージがなければビルドする
 if ! docker image inspect "$CC_SANDBOX_IMAGE" > /dev/null 2>&1; then
-	echo "Image '$CC_SANDBOX_IMAGE' does not exist. Creating..."
+	echo "Image '$CC_SANDBOX_IMAGE' does not exist. Building..."
 	docker_build_path="$(get_script_dir)"
 	docker build \
 		--build-arg USERNAME="$CC_SANDBOX_USER" \
 		--tag "$CC_SANDBOX_IMAGE" \
 		"$docker_build_path"
-	echo "Image '$CC_SANDBOX_IMAGE' created."
+	echo "Image '$CC_SANDBOX_IMAGE' built."
 fi
 
 # ネットワークがなければ作成する
@@ -72,22 +75,40 @@ fi
 
 # proxyが起動していなければ起動する
 if [ "$(docker inspect -f '{{.State.Running}}' "$CC_SANDBOX_PROXY_CONTAINER" 2> /dev/null)" = "false" ]; then
+	echo "Container '$CC_SANDBOX_PROXY_CONTAINER' is stopped. Starting..."
 	docker start "$CC_SANDBOX_PROXY_CONTAINER"
+	echo "Container '$CC_SANDBOX_PROXY_CONTAINER' started."
+fi
+
+# ディレクトリがなければ作成する
+if [ ! -d "$CC_SANDBOX_DOTCLAUDE" ]; then
+	echo "Directory '$CC_SANDBOX_DOTCLAUDE' does not exist. Creating..."
+	mkdir -p "$CC_SANDBOX_DOTCLAUDE"
+	echo "Directory '$CC_SANDBOX_DOTCLAUDE' created."
+fi
+if [ ! -d "$CC_SANDBOX_DOTCONFIG" ]; then
+	echo "Directory '$CC_SANDBOX_DOTCONFIG' does not exist. Creating..."
+	mkdir -p "$CC_SANDBOX_DOTCONFIG"
+	echo "Directory '$CC_SANDBOX_DOTCONFIG' created."
 fi
 
 network_cidr="$(docker network inspect "$CC_SANDBOX_INTERNAL_NETWORK" --format '{{(index .IPAM.Config 0).Subnet}}')"
 
-workspace="$(basename "$PWD")"
+workspace="/workspaces/$(basename "$PWD")"
 
+remote_user_home="/home/${CC_SANDBOX_USER}"
+
+echo "Starting Claude Code sandbox in workspace '$workspace'..."
 docker run -it --rm \
   --network "$CC_SANDBOX_INTERNAL_NETWORK" \
   -e "http_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "https_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "no_proxy=127.0.0.1,localhost,${network_cidr},.test" \
-  -v "$CC_SANDBOX_VOLUME_PREFIX"dotclaude:/home/"$CC_SANDBOX_USER"/.claude \
-  -v "$CC_SANDBOX_VOLUME_PREFIX"dotconfig:/home/"$CC_SANDBOX_USER"/.config \
-  -v "$CC_SANDBOX_VOLUME_PREFIX"share-mise:/home/"$CC_SANDBOX_USER"/.local/share/mise \
-  -v "$CC_SANDBOX_VOLUME_PREFIX"state-mise:/home/"$CC_SANDBOX_USER"/.local/state/mise \
-  -v "$PWD":/workspaces/"$workspace" \
+  -v "${CC_SANDBOX_DOTCLAUDE}:${remote_user_home}/.claude" \
+  -v "${CC_SANDBOX_DOTCONFIG}:${remote_user_home}/.config" \
+  -v "${CC_SANDBOX_SHARE_MISE_VOLUME}:${remote_user_home}/.local/share/mise" \
+  -v "${CC_SANDBOX_STATE_MISE_VOLUME}:${remote_user_home}/.local/state/mise" \
+  -v "${PWD}:${workspace}" \
+  -w "$workspace" \
   "$CC_SANDBOX_IMAGE" bash
 
