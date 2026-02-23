@@ -1,0 +1,284 @@
+# Claude Code on the Web - デフォルトで許可されたドメイン
+# Squid whitelist (acl whitelist dstdomain 形式)
+# ワイルドカード *.example.com は .example.com として記載（Squid の dstdomain は自動的にサブドメインを含む）
+# 参照: https://code.claude.com/docs/ja/claude-code-on-the-web
+
+# --- Anthropic サービス ---
+api.anthropic.com
+statsig.anthropic.com
+platform.claude.com
+code.claude.com
+claude.ai
+
+# --- バージョン管理 ---
+github.com
+www.github.com
+api.github.com
+npm.pkg.github.com
+raw.githubusercontent.com
+pkg-npm.githubusercontent.com
+objects.githubusercontent.com
+codeload.github.com
+avatars.githubusercontent.com
+camo.githubusercontent.com
+gist.github.com
+gitlab.com
+www.gitlab.com
+registry.gitlab.com
+bitbucket.org
+www.bitbucket.org
+api.bitbucket.org
+
+# --- コンテナレジストリ ---
+registry-1.docker.io
+auth.docker.io
+index.docker.io
+hub.docker.com
+www.docker.com
+production.cloudflare.docker.com
+download.docker.com
+#gcr.io  # .gcr.io に包含
+.gcr.io
+ghcr.io
+mcr.microsoft.com
+.data.mcr.microsoft.com
+public.ecr.aws
+
+# --- クラウドプラットフォーム ---
+cloud.google.com
+accounts.google.com
+gcloud.google.com
+.googleapis.com
+#storage.googleapis.com  # .googleapis.com に包含
+#compute.googleapis.com  # .googleapis.com に包含
+#container.googleapis.com  # .googleapis.com に包含
+azure.com
+portal.azure.com
+microsoft.com
+www.microsoft.com
+.microsoftonline.com
+packages.microsoft.com
+dotnet.microsoft.com
+dot.net
+visualstudio.com
+dev.azure.com
+.amazonaws.com
+.api.aws
+oracle.com
+www.oracle.com
+java.com
+www.java.com
+java.net
+www.java.net
+download.oracle.com
+yum.oracle.com
+
+# --- パッケージマネージャー - JavaScript/Node ---
+registry.npmjs.org
+www.npmjs.com
+www.npmjs.org
+npmjs.com
+npmjs.org
+yarnpkg.com
+registry.yarnpkg.com
+
+# --- パッケージマネージャー - Python ---
+pypi.org
+www.pypi.org
+files.pythonhosted.org
+pythonhosted.org
+test.pypi.org
+pypi.python.org
+pypa.io
+www.pypa.io
+
+# --- パッケージマネージャー - Ruby ---
+rubygems.org
+www.rubygems.org
+api.rubygems.org
+index.rubygems.org
+ruby-lang.org
+www.ruby-lang.org
+rubyforge.org
+www.rubyforge.org
+rubyonrails.org
+www.rubyonrails.org
+rvm.io
+get.rvm.io
+
+# --- パッケージマネージャー - Rust ---
+crates.io
+www.crates.io
+index.crates.io
+static.crates.io
+rustup.rs
+static.rust-lang.org
+www.rust-lang.org
+
+# --- パッケージマネージャー - Go ---
+proxy.golang.org
+sum.golang.org
+index.golang.org
+golang.org
+www.golang.org
+goproxy.io
+pkg.go.dev
+
+# --- パッケージマネージャー - JVM ---
+maven.org
+repo.maven.org
+central.maven.org
+repo1.maven.org
+jcenter.bintray.com
+gradle.org
+www.gradle.org
+services.gradle.org
+plugins.gradle.org
+kotlin.org
+www.kotlin.org
+spring.io
+repo.spring.io
+
+# --- パッケージマネージャー - その他の言語 ---
+packagist.org
+www.packagist.org
+repo.packagist.org
+nuget.org
+www.nuget.org
+api.nuget.org
+pub.dev
+api.pub.dev
+hex.pm
+www.hex.pm
+cpan.org
+www.cpan.org
+metacpan.org
+www.metacpan.org
+api.metacpan.org
+cocoapods.org
+www.cocoapods.org
+cdn.cocoapods.org
+haskell.org
+www.haskell.org
+hackage.haskell.org
+swift.org
+www.swift.org
+
+# --- Linux ディストリビューション ---
+#archive.ubuntu.com  # .ubuntu.com に包含
+#security.ubuntu.com  # .ubuntu.com に包含
+#ubuntu.com  # .ubuntu.com に包含
+#www.ubuntu.com  # .ubuntu.com に包含
+.ubuntu.com
+ppa.launchpad.net
+launchpad.net
+www.launchpad.net
+
+# --- 開発ツールとプラットフォーム ---
+dl.k8s.io
+pkgs.k8s.io
+k8s.io
+www.k8s.io
+releases.hashicorp.com
+apt.releases.hashicorp.com
+rpm.releases.hashicorp.com
+archive.releases.hashicorp.com
+hashicorp.com
+www.hashicorp.com
+repo.anaconda.com
+conda.anaconda.org
+anaconda.org
+www.anaconda.com
+anaconda.com
+continuum.io
+apache.org
+www.apache.org
+archive.apache.org
+downloads.apache.org
+eclipse.org
+www.eclipse.org
+download.eclipse.org
+nodejs.org
+www.nodejs.org
+
+# --- クラウドサービスと監視 ---
+statsig.com
+www.statsig.com
+api.statsig.com
+#sentry.io  # .sentry.io に包含
+.sentry.io
+#http-intake.logs.datadoghq.com  # .datadoghq.com に包含
+.datadoghq.com
+.datadoghq.eu
+
+# --- コンテンツ配信とミラー ---
+#sourceforge.net  # .sourceforge.net に包含
+.sourceforge.net
+#packagecloud.io  # .packagecloud.io に包含
+.packagecloud.io
+
+# --- スキーマと設定 ---
+json-schema.org
+www.json-schema.org
+json.schemastore.org
+www.schemastore.org
+
+# --- Model Context Protocol ---
+.modelcontextprotocol.io
+
+# --------------------------------------------------------------------------------
+
+# Claude Codeに出させた技術調査に使用するウェブサイト
+arxiv.org
+blog.acolyer.org
+bundlephobia.com
+caniuse.com
+cwe.mitre.org
+datatracker.ietf.org
+devdocs.io
+developer.mozilla.org
+dl.acm.org
+docs.rs
+godbolt.org
+ieeexplore.ieee.org
+jsonformatter.curiousconcept.com
+lobste.rs
+news.ycombinator.com
+nvd.nist.gov
+owasp.org
+paperswithcode.com
+regex101.com
+scholar.google.com
+stackoverflow.com
+tc39.es
+whatwg.org
+www.exploit-db.com
+www.semanticscholar.org
+www.w3.org
+
+# パッケージマネージャで必要
+deb.debian.org
+
+# Claude Codeのアップデートで必要
+dl.google.com
+www.google.com
+
+# miseで必要
+mise.jdx.dev
+mise-versions.jdx.dev
+release-assets.githubusercontent.com
+
+# Golang
+go.abhg.dev
+go.dev
+gopkg.in
+goproxy.cn
+
+# その他
+urgm.jp
+golangci-lint.run
+goreleaser.com
+learn.microsoft.com
+tuf-repo-cdn.sigstore.dev
+zenn.dev
+.github.io

@@ -1,0 +1,93 @@
+#!/bin/bash
+set -euo pipefail
+
+CC_SANDBOX_PREFIX="${CC_SANDBOX_PREFIX:-}"
+CC_SANDBOX_IMAGE="${CC_SANDBOX_IMAGE:-${CC_SANDBOX_PREFIX}claude-code}"
+CC_SANDBOX_NETWORK="${CC_SANDBOX_NETWORK:-${CC_SANDBOX_PREFIX}claude-code-network}"
+CC_SANDBOX_INTERNAL_NETWORK="${CC_SANDBOX_INTERNAL_NETWORK:-${CC_SANDBOX_PREFIX}claude-code-internal-network}"
+CC_SANDBOX_VOLUME_PREFIX="${CC_SANDBOX_VOLUME_PREFIX:-${CC_SANDBOX_PREFIX}claude-code-}"
+CC_SANDBOX_PROXY_CONTAINER="${CC_SANDBOX_PROXY_CONTAINER:-${CC_SANDBOX_PREFIX}claude-code-proxy}"
+CC_SANDBOX_USER="${CC_SANDBOX_USER:-${CC_SANDBOX_PREFIX}claude}"
+
+get_script_dir() {
+  # BASH_SOURCE が使えるならそれを優先（bash/zsh）
+  if [ -n "${BASH_SOURCE[0]}" ]; then
+    SOURCE="${BASH_SOURCE[0]}"
+  else
+    SOURCE="$0"
+  fi
+
+  # シンボリックリンクを辿る
+  while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    case "$SOURCE" in
+      /*) ;;                     # 絶対パスならそのまま
+      *) SOURCE="$DIR/$SOURCE" ;; # 相対パスなら補完
+    esac
+  done
+
+  # 実体ファイルのあるディレクトリを取得
+  cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd
+}
+
+# イメージがなければビルドする
+if ! docker image inspect "$CC_SANDBOX_IMAGE" > /dev/null 2>&1; then
+	echo "Image '$CC_SANDBOX_IMAGE' does not exist. Creating..."
+	docker_build_path="$(get_script_dir)"
+	docker build \
+		--build-arg USERNAME="$CC_SANDBOX_USER" \
+		--tag "$CC_SANDBOX_IMAGE" \
+		"$docker_build_path"
+	echo "Image '$CC_SANDBOX_IMAGE' created."
+fi
+
+# ネットワークがなければ作成する
+if ! docker network inspect "$CC_SANDBOX_NETWORK" > /dev/null 2>&1; then
+	echo "Network '$CC_SANDBOX_NETWORK' does not exist. Creating..."
+	docker network create "$CC_SANDBOX_NETWORK"
+	echo "Network '$CC_SANDBOX_NETWORK' created."
+fi
+
+# 内部ネットワークがなければ作成する
+if ! docker network inspect "$CC_SANDBOX_INTERNAL_NETWORK" > /dev/null 2>&1; then
+	echo "Network '$CC_SANDBOX_INTERNAL_NETWORK' does not exist. Creating..."
+	docker network create --internal "$CC_SANDBOX_INTERNAL_NETWORK"
+	echo "Network '$CC_SANDBOX_INTERNAL_NETWORK' created."
+fi
+
+# proxyがなければ起動する
+if ! docker inspect "$CC_SANDBOX_PROXY_CONTAINER" > /dev/null 2>&1; then
+	echo "Container '$CC_SANDBOX_PROXY_CONTAINER' does not exist. Creating..."
+	proxy_asset_path="$(get_script_dir)"/proxy
+	docker run --detach --name "$CC_SANDBOX_PROXY_CONTAINER" \
+		--hostname "$CC_SANDBOX_PROXY_CONTAINER".test \
+		--network "$CC_SANDBOX_INTERNAL_NETWORK" \
+		--volume "$proxy_asset_path"/squid.conf:/etc/squid/conf.d/_squid.conf:ro \
+		--volume "$proxy_asset_path"/whitelist.txt:/etc/squid/whitelist.txt:ro \
+		ubuntu/squid
+	docker network connect "$CC_SANDBOX_NETWORK" "$CC_SANDBOX_PROXY_CONTAINER"
+	echo "Container '$CC_SANDBOX_PROXY_CONTAINER' created."
+fi
+
+# proxyが起動していなければ起動する
+if [ "$(docker inspect -f '{{.State.Running}}' "$CC_SANDBOX_PROXY_CONTAINER" 2> /dev/null)" = "false" ]; then
+	docker start "$CC_SANDBOX_PROXY_CONTAINER"
+fi
+
+network_cidr="$(docker network inspect "$CC_SANDBOX_INTERNAL_NETWORK" --format '{{(index .IPAM.Config 0).Subnet}}')"
+
+workspace="$(basename "$PWD")"
+
+docker run -it --rm \
+  --network "$CC_SANDBOX_INTERNAL_NETWORK" \
+  -e "http_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
+  -e "https_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
+  -e "no_proxy=127.0.0.1,localhost,${network_cidr},.test" \
+  -v "$CC_SANDBOX_VOLUME_PREFIX"dotclaude:/home/"$CC_SANDBOX_USER"/.claude \
+  -v "$CC_SANDBOX_VOLUME_PREFIX"dotconfig:/home/"$CC_SANDBOX_USER"/.config \
+  -v "$CC_SANDBOX_VOLUME_PREFIX"share-mise:/home/"$CC_SANDBOX_USER"/.local/share/mise \
+  -v "$CC_SANDBOX_VOLUME_PREFIX"state-mise:/home/"$CC_SANDBOX_USER"/.local/state/mise \
+  -v "$PWD":/workspaces/"$workspace" \
+  "$CC_SANDBOX_IMAGE" bash
+
