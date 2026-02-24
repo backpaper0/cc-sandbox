@@ -10,6 +10,8 @@ Claude Codeを安全に`--dangerously-skip-permissions`付きで動かすため�
 - インターネット通信は`internal`なネットワークと`internal`でないネットワークの両方へ接続しているSquidコンテナを経由して行う
 - ホスト側はVSCode等のエディタで該当ディレクトリを開いてClaude Codeが作成・編集したファイルを確認する
 
+![](./architecture.drawio.svg)
+
 ## インストール
 
 このリポジトリ`git clone`する。
