@@ -67,8 +67,8 @@ claude
 | `CC_SANDBOX_INTERNAL_NETWORK` | `claude-code-internal-network` | 内部専用Dockerネットワーク名 |
 | `CC_SANDBOX_PROXY_CONTAINER` | `claude-code-proxy` | Squidプロキシコンテナ名 |
 | `CC_SANDBOX_USER` | `claude` | コンテナ内のユーザー名 |
-| `CC_SANDBOX_DOTCLAUDE` | `~/.claude-in-sandbox` | ホスト側の `.claude` ディレクトリのパス（認証情報や設定が保存される） |
-| `CC_SANDBOX_DOTCONFIG` | `~/.config/claude-in-sandbox-config` | ホスト側の `.config` ディレクトリのパス |
+| `CC_SANDBOX_DOTCLAUDE` | `~/.claude-in-sandbox/.claude` | ホスト側の `.claude` ディレクトリのパス（認証情報や設定が保存される） |
+| `CC_SANDBOX_DOTCONFIG` | `~/.claude-in-sandbox/.config` | ホスト側の `.config` ディレクトリのパス |
 
 ### アクセス許可ドメインの変更
 
