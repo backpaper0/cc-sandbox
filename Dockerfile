@@ -45,7 +45,7 @@ ENV TZ="Asia/Tokyo"
 # miseをインストール
 RUN <<_EOF_
 curl https://mise.run/bash | bash
-echo 'eval "$(~/.local/bin/mise activatei bash)"' >> ~/.bashrc
+echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 _EOF_
 
 # Claude Codeをインストール
