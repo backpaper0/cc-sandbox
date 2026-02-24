@@ -76,3 +76,34 @@ claude
 アクセスを許可したいドメインを追加・削除する場合はこのファイルを編集する。
 Squidの `dstdomain` 形式に従い、`.example.com` と記載するとサブドメインを含むすべてのホストが対象になる。
 
+### 同一ネットワーク上の他コンテナへのアクセス
+
+サンドボックスコンテナからのインターネット通信はSquidプロキシ経由になるが、同一の内部Dockerネットワーク(`CC_SANDBOX_INTERNAL_NETWORK`)に接続している他のコンテナへはプロキシを経由せず直接アクセスできる。
+
+これは `no_proxy` 環境変数に `.test` が含まれているため、末尾が `.test` のドメイン名（ホスト名）を持つコンテナへのリクエストはプロキシをバイパスする仕組みによる。
+
+他のコンテナを内部ネットワークへ接続する際は `--hostname <名前>.test` を指定することで、サンドボックスコンテナからプロキシなしで直接アクセスできる。
+
+#### 例: Nginxコンテナへのアクセス
+
+Nginxコンテナを内部ネットワークに接続して起動する。
+
+```bash
+docker run --rm --detach \
+  --name my-nginx \
+  --hostname my-nginx.test \
+  --network claude-code-internal-network \
+  nginx
+```
+
+サンドボックスコンテナ内から `curl` でアクセスできることを確認する。
+
+```bash
+curl http://my-nginx.test
+```
+
+プロキシを経由していないことを確認したい場合は `-v` オプションを付けて実行する。`* CONNECT` や `* Using proxy` のような表示がなければプロキシをバイパスしている。
+
+```bash
+curl -v http://my-nginx.test
+```
