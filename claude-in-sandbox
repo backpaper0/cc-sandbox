@@ -12,6 +12,20 @@ CC_SANDBOX_DOTCONFIG="${CC_SANDBOX_DOTCONFIG:-${HOME}/.config/${CC_SANDBOX_PREFI
 CC_SANDBOX_SHARE_MISE_VOLUME="${CC_SANDBOX_SHARE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-share-mise}"
 CC_SANDBOX_STATE_MISE_VOLUME="${CC_SANDBOX_STATE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-state-mise}"
 
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Run Claude Code in a Docker sandbox.
+
+Options:
+  --cleanup         Stop and remove all Docker resources created by this script.
+  --force, -f       Skip confirmation prompt when used with --cleanup.
+  --list-mounts     Display all bind mounts and volumes used by the container.
+  --help, -h        Show this help message and exit.
+EOF
+}
+
 get_script_dir() {
   # BASH_SOURCE が使えるならそれを優先（bash/zsh）
   if [ -n "${BASH_SOURCE[0]}" ]; then
@@ -34,16 +48,124 @@ get_script_dir() {
   cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd
 }
 
-# イメージがなければビルドする
-if ! docker image inspect "$CC_SANDBOX_IMAGE" > /dev/null 2>&1; then
-	echo "Image '$CC_SANDBOX_IMAGE' does not exist. Building..."
-	docker_build_path="$(get_script_dir)"
-	docker build \
-		--build-arg USERNAME="$CC_SANDBOX_USER" \
-		--tag "$CC_SANDBOX_IMAGE" \
-		"$docker_build_path"
-	echo "Image '$CC_SANDBOX_IMAGE' built."
+build_image() {
+    local dockerfile_path
+    dockerfile_path="$(get_script_dir)/Dockerfile"
+    local current_hash
+    current_hash="$(sha256sum "$dockerfile_path" | cut -d' ' -f1)"
+
+    if ! docker image inspect "$CC_SANDBOX_IMAGE" > /dev/null 2>&1; then
+        echo "Image '$CC_SANDBOX_IMAGE' does not exist. Building..."
+        docker build \
+            --label "dockerfile_hash=${current_hash}" \
+            --build-arg USERNAME="$CC_SANDBOX_USER" \
+            --tag "$CC_SANDBOX_IMAGE" \
+            "$(get_script_dir)"
+        echo "Image '$CC_SANDBOX_IMAGE' built."
+    else
+        local stored_hash
+        stored_hash="$(docker image inspect "$CC_SANDBOX_IMAGE" \
+            --format '{{index .Config.Labels "dockerfile_hash"}}' 2>/dev/null || echo "")"
+        if [ "$stored_hash" != "$current_hash" ]; then
+            echo "Dockerfile has changed. Rebuilding image '$CC_SANDBOX_IMAGE'..."
+            docker build \
+                --label "dockerfile_hash=${current_hash}" \
+                --build-arg USERNAME="$CC_SANDBOX_USER" \
+                --tag "$CC_SANDBOX_IMAGE" \
+                "$(get_script_dir)"
+            echo "Image '$CC_SANDBOX_IMAGE' rebuilt."
+        fi
+    fi
+}
+
+cleanup() {
+    local force="${1:-false}"
+
+    if [ "$force" != "true" ]; then
+        if [ ! -t 0 ]; then
+            echo "Non-interactive mode: use --force to skip confirmation." >&2
+            exit 1
+        fi
+        echo "This will remove the following Docker resources:"
+        echo "  Container: $CC_SANDBOX_PROXY_CONTAINER"
+        echo "  Network:   $CC_SANDBOX_INTERNAL_NETWORK"
+        echo "  Network:   $CC_SANDBOX_NETWORK"
+        echo "  Image:     $CC_SANDBOX_IMAGE"
+        echo "  Volume:    $CC_SANDBOX_SHARE_MISE_VOLUME"
+        echo "  Volume:    $CC_SANDBOX_STATE_MISE_VOLUME"
+        echo ""
+        echo "Host directories will NOT be removed."
+        echo ""
+        printf "Continue? [y/N] "
+        read -r answer
+        case "$answer" in
+            [Yy]*) ;;
+            *) echo "Aborted."; exit 0 ;;
+        esac
+    fi
+
+    if docker inspect "$CC_SANDBOX_PROXY_CONTAINER" > /dev/null 2>&1; then
+        echo "Stopping container '$CC_SANDBOX_PROXY_CONTAINER'..."
+        docker stop "$CC_SANDBOX_PROXY_CONTAINER"
+        echo "Removing container '$CC_SANDBOX_PROXY_CONTAINER'..."
+        docker rm "$CC_SANDBOX_PROXY_CONTAINER"
+    fi
+
+    echo "Removing network '$CC_SANDBOX_INTERNAL_NETWORK'..."
+    docker network rm "$CC_SANDBOX_INTERNAL_NETWORK" 2>/dev/null || true
+    echo "Removing network '$CC_SANDBOX_NETWORK'..."
+    docker network rm "$CC_SANDBOX_NETWORK" 2>/dev/null || true
+
+    echo "Removing image '$CC_SANDBOX_IMAGE'..."
+    docker image rm "$CC_SANDBOX_IMAGE" 2>/dev/null || true
+
+    echo "Removing volume '$CC_SANDBOX_SHARE_MISE_VOLUME'..."
+    docker volume rm "$CC_SANDBOX_SHARE_MISE_VOLUME" 2>/dev/null || true
+    echo "Removing volume '$CC_SANDBOX_STATE_MISE_VOLUME'..."
+    docker volume rm "$CC_SANDBOX_STATE_MISE_VOLUME" 2>/dev/null || true
+
+    echo "Cleanup complete."
+}
+
+list_mounts() {
+    local remote_user_home="/home/${CC_SANDBOX_USER}"
+    local workspace="/workspaces/$(basename "$PWD")"
+
+    echo "Bind mounts:"
+    echo "  ${CC_SANDBOX_DOTCLAUDE} → ${remote_user_home}/.claude"
+    echo "  ${CC_SANDBOX_DOTCONFIG} → ${remote_user_home}/.config"
+    echo "  ${PWD} → ${workspace}"
+    echo ""
+    echo "Named volumes:"
+    echo "  ${CC_SANDBOX_SHARE_MISE_VOLUME} → ${remote_user_home}/.local/share/mise"
+    echo "  ${CC_SANDBOX_STATE_MISE_VOLUME} → ${remote_user_home}/.local/state/mise"
+}
+
+CLEANUP=false
+FORCE=false
+LIST_MOUNTS=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --cleanup)     CLEANUP=true; shift ;;
+        --force|-f)    FORCE=true; shift ;;
+        --list-mounts) LIST_MOUNTS=true; shift ;;
+        --help|-h)     show_usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; show_usage >&2; exit 1 ;;
+    esac
+done
+
+if [ "$CLEANUP" = "true" ]; then
+    cleanup "$FORCE"
+    exit 0
 fi
+
+if [ "$LIST_MOUNTS" = "true" ]; then
+    list_mounts
+    exit 0
+fi
+
+build_image
 
 # ネットワークがなければ作成する
 if ! docker network inspect "$CC_SANDBOX_NETWORK" > /dev/null 2>&1; then
@@ -111,4 +233,3 @@ docker run -it --rm \
   -v "${PWD}:${workspace}" \
   -w "$workspace" \
   "$CC_SANDBOX_IMAGE" bash
-
