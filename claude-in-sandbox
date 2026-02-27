@@ -144,7 +144,7 @@ list_mounts() {
     echo "Bind mounts:"
     echo "  ${CC_SANDBOX_DOTCLAUDE} → ${remote_user_home}/.claude"
     echo "  ${CC_SANDBOX_DOTCONFIG} → ${remote_user_home}/.config"
-    echo "  ${script_dir}/proxy/maven/settings.xml → ${remote_user_home}/.m2/settings.xml"
+    echo "  ${script_dir}/proxy/maven/settings.xml → ${remote_user_home}/.m2/settings.xml (read-only)"
     echo "  ${PWD} → ${workspace}"
     echo ""
     echo "Named volumes:"
