@@ -51,6 +51,8 @@ get_script_dir() {
 }
 
 script_dir="$(get_script_dir)"
+workspace="/workspaces/$(basename "$PWD")"
+remote_user_home="/home/${CC_SANDBOX_USER}"
 
 build_image() {
     local dockerfile_path
@@ -139,9 +141,6 @@ cleanup() {
 }
 
 list_mounts() {
-    local remote_user_home="/home/${CC_SANDBOX_USER}"
-    local workspace="/workspaces/$(basename "$PWD")"
-
     echo "Bind mounts:"
     echo "  ${CC_SANDBOX_DOTCLAUDE} → ${remote_user_home}/.claude"
     echo "  ${CC_SANDBOX_DOTCONFIG} → ${remote_user_home}/.config"
@@ -229,10 +228,6 @@ if [ ! -d "$CC_SANDBOX_DOTCONFIG" ]; then
 fi
 
 network_cidr="$(docker network inspect "$CC_SANDBOX_INTERNAL_NETWORK" --format '{{(index .IPAM.Config 0).Subnet}}')"
-
-workspace="/workspaces/$(basename "$PWD")"
-
-remote_user_home="/home/${CC_SANDBOX_USER}"
 
 echo "Starting Claude Code sandbox in workspace '$workspace'..."
 docker run -it --rm \
