@@ -61,6 +61,8 @@ mkdir -p ~/.claude
 mkdir -p ~/.config
 mkdir -p ~/.local/share/mise
 mkdir -p ~/.local/state/mise
+mkdir -p ~/.m2/repository
+mkdir -p ~/.m2/wrapper
 _EOF_
 
 WORKDIR /workspaces

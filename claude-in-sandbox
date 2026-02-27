@@ -11,6 +11,8 @@ CC_SANDBOX_DOTCLAUDE="${CC_SANDBOX_DOTCLAUDE:-${HOME}/.${CC_SANDBOX_PREFIX}claud
 CC_SANDBOX_DOTCONFIG="${CC_SANDBOX_DOTCONFIG:-${HOME}/.${CC_SANDBOX_PREFIX}claude-in-sandbox/.config}"
 CC_SANDBOX_SHARE_MISE_VOLUME="${CC_SANDBOX_SHARE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-share-mise}"
 CC_SANDBOX_STATE_MISE_VOLUME="${CC_SANDBOX_STATE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-state-mise}"
+CC_SANDBOX_M2_REPO="${CC_SANDBOX_M2_REPO:-${CC_SANDBOX_PREFIX}claude-code-m2-repo}"
+CC_SANDBOX_M2_WRAPPER="${CC_SANDBOX_M2_WRAPPER:-${CC_SANDBOX_PREFIX}claude-code-m2-wrapper}"
 
 show_usage() {
     cat <<EOF
@@ -48,9 +50,11 @@ get_script_dir() {
   cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd
 }
 
+script_dir="$(get_script_dir)"
+
 build_image() {
     local dockerfile_path
-    dockerfile_path="$(get_script_dir)/Dockerfile"
+    dockerfile_path="${script_dir}/Dockerfile"
     local current_hash
     current_hash="$(sha256sum "$dockerfile_path" | cut -d' ' -f1)"
 
@@ -60,7 +64,7 @@ build_image() {
             --label "dockerfile_hash=${current_hash}" \
             --build-arg USERNAME="$CC_SANDBOX_USER" \
             --tag "$CC_SANDBOX_IMAGE" \
-            "$(get_script_dir)"
+            "$script_dir"
         echo "Image '$CC_SANDBOX_IMAGE' built."
     else
         local stored_hash
@@ -72,7 +76,7 @@ build_image() {
                 --label "dockerfile_hash=${current_hash}" \
                 --build-arg USERNAME="$CC_SANDBOX_USER" \
                 --tag "$CC_SANDBOX_IMAGE" \
-                "$(get_script_dir)"
+                "$script_dir"
             echo "Image '$CC_SANDBOX_IMAGE' rebuilt."
         fi
     fi
@@ -93,6 +97,8 @@ cleanup() {
         echo "  Image:     $CC_SANDBOX_IMAGE"
         echo "  Volume:    $CC_SANDBOX_SHARE_MISE_VOLUME"
         echo "  Volume:    $CC_SANDBOX_STATE_MISE_VOLUME"
+        echo "  Volume:    $CC_SANDBOX_M2_REPO"
+        echo "  Volume:    $CC_SANDBOX_M2_WRAPPER"
         echo ""
         echo "Host directories will NOT be removed."
         echo ""
@@ -124,6 +130,11 @@ cleanup() {
     echo "Removing volume '$CC_SANDBOX_STATE_MISE_VOLUME'..."
     docker volume rm "$CC_SANDBOX_STATE_MISE_VOLUME" 2>/dev/null || true
 
+    echo "Removing volume '$CC_SANDBOX_M2_REPO'..."
+    docker volume rm "$CC_SANDBOX_M2_REPO" 2>/dev/null || true
+    echo "Removing volume '$CC_SANDBOX_M2_WRAPPER'..."
+    docker volume rm "$CC_SANDBOX_M2_WRAPPER" 2>/dev/null || true
+
     echo "Cleanup complete."
 }
 
@@ -134,11 +145,14 @@ list_mounts() {
     echo "Bind mounts:"
     echo "  ${CC_SANDBOX_DOTCLAUDE} → ${remote_user_home}/.claude"
     echo "  ${CC_SANDBOX_DOTCONFIG} → ${remote_user_home}/.config"
+    echo "  ${script_dir}/proxy/maven/settings.xml → ${remote_user_home}/.m2/settings.xml"
     echo "  ${PWD} → ${workspace}"
     echo ""
     echo "Named volumes:"
     echo "  ${CC_SANDBOX_SHARE_MISE_VOLUME} → ${remote_user_home}/.local/share/mise"
     echo "  ${CC_SANDBOX_STATE_MISE_VOLUME} → ${remote_user_home}/.local/state/mise"
+    echo "  ${CC_SANDBOX_M2_REPO} → ${remote_user_home}/.m2/repository"
+    echo "  ${CC_SANDBOX_M2_WRAPPER} → ${remote_user_home}/.m2/wrapper"
 }
 
 CLEANUP=false
@@ -184,12 +198,12 @@ fi
 # proxyがなければ起動する
 if ! docker inspect "$CC_SANDBOX_PROXY_CONTAINER" > /dev/null 2>&1; then
 	echo "Container '$CC_SANDBOX_PROXY_CONTAINER' does not exist. Creating..."
-	proxy_asset_path="$(get_script_dir)"/proxy
+	proxy_asset_path="${script_dir}/proxy"
 	docker run --detach --name "$CC_SANDBOX_PROXY_CONTAINER" \
-		--hostname "$CC_SANDBOX_PROXY_CONTAINER".test \
+		--hostname "${CC_SANDBOX_PROXY_CONTAINER}.test" \
 		--network "$CC_SANDBOX_INTERNAL_NETWORK" \
-		--volume "$proxy_asset_path"/squid.conf:/etc/squid/conf.d/_squid.conf:ro \
-		--volume "$proxy_asset_path"/whitelist.txt:/etc/squid/whitelist.txt:ro \
+		--volume "${proxy_asset_path}/squid.conf:/etc/squid/conf.d/_squid.conf:ro" \
+		--volume "${proxy_asset_path}/whitelist.txt:/etc/squid/whitelist.txt:ro" \
 		ubuntu/squid
 	docker network connect "$CC_SANDBOX_NETWORK" "$CC_SANDBOX_PROXY_CONTAINER"
 	echo "Container '$CC_SANDBOX_PROXY_CONTAINER' created."
@@ -226,10 +240,14 @@ docker run -it --rm \
   -e "http_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "https_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "no_proxy=127.0.0.1,localhost,${network_cidr},.test" \
+  -e "CLAUDE_CODE_PROXY_HOST=${CC_SANDBOX_PROXY_CONTAINER}.test" \
   -v "${CC_SANDBOX_DOTCLAUDE}:${remote_user_home}/.claude" \
   -v "${CC_SANDBOX_DOTCONFIG}:${remote_user_home}/.config" \
   -v "${CC_SANDBOX_SHARE_MISE_VOLUME}:${remote_user_home}/.local/share/mise" \
   -v "${CC_SANDBOX_STATE_MISE_VOLUME}:${remote_user_home}/.local/state/mise" \
   -v "${PWD}:${workspace}" \
+  -v "${script_dir}/proxy/maven/settings.xml:${remote_user_home}/.m2/settings.xml:ro" \
+  -v "${CC_SANDBOX_M2_REPO}:${remote_user_home}/.m2/repository" \
+  -v "${CC_SANDBOX_M2_WRAPPER}:${remote_user_home}/.m2/wrapper" \
   -w "$workspace" \
   "$CC_SANDBOX_IMAGE" bash
