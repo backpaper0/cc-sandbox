@@ -267,6 +267,11 @@ www.google.com
 mise.jdx.dev
 mise-versions.jdx.dev
 release-assets.githubusercontent.com
+mise-java.jdx.dev
+
+# Java
+download.java.net
+repo.maven.apache.org
 
 # Golang
 go.abhg.dev
