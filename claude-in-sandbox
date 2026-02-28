@@ -24,6 +24,10 @@ Options:
   --cleanup         Stop and remove all Docker resources created by this script.
   --force, -f       Skip confirmation prompt when used with --cleanup.
   --list-mounts     Display all bind mounts and volumes used by the container.
+  --volume, -v HOST:CT   Mount a host path into the container (can be repeated).
+                         Format: HOST:CONTAINER or HOST:CONTAINER:ro
+  --env, -e VAR=VALUE    Set an environment variable in the container (can be repeated).
+                         Format: VAR=VALUE or VAR (inherits from host environment)
   --help, -h        Show this help message and exit.
 EOF
 }
@@ -152,11 +156,29 @@ list_mounts() {
     echo "  ${CC_SANDBOX_STATE_MISE_VOLUME} → ${remote_user_home}/.local/state/mise"
     echo "  ${CC_SANDBOX_M2_REPO} → ${remote_user_home}/.m2/repository"
     echo "  ${CC_SANDBOX_M2_WRAPPER} → ${remote_user_home}/.m2/wrapper"
+    if [[ ${#extra_volumes[@]} -gt 0 ]]; then
+        echo ""
+        echo "Additional mounts (--volume):"
+        local i
+        for (( i=1; i<${#extra_volumes[@]}; i+=2 )); do
+            echo "  ${extra_volumes[$i]}"
+        done
+    fi
+    if [[ ${#extra_envs[@]} -gt 0 ]]; then
+        echo ""
+        echo "Additional environment variables (--env):"
+        local i
+        for (( i=1; i<${#extra_envs[@]}; i+=2 )); do
+            echo "  ${extra_envs[$i]}"
+        done
+    fi
 }
 
 CLEANUP=false
 FORCE=false
 LIST_MOUNTS=false
+extra_volumes=()
+extra_envs=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -164,6 +186,24 @@ while [[ $# -gt 0 ]]; do
         --force|-f)    FORCE=true; shift ;;
         --list-mounts) LIST_MOUNTS=true; shift ;;
         --help|-h)     show_usage; exit 0 ;;
+        --volume|-v)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires an argument." >&2
+                show_usage >&2
+                exit 1
+            fi
+            extra_volumes+=("-v" "$2")
+            shift 2
+            ;;
+        --env|-e)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires an argument." >&2
+                show_usage >&2
+                exit 1
+            fi
+            extra_envs+=("-e" "$2")
+            shift 2
+            ;;
         *) echo "Unknown option: $1" >&2; show_usage >&2; exit 1 ;;
     esac
 done
@@ -244,5 +284,7 @@ docker run -it --rm \
   -v "${script_dir}/proxy/maven/settings.xml:${remote_user_home}/.m2/settings.xml:ro" \
   -v "${CC_SANDBOX_M2_REPO}:${remote_user_home}/.m2/repository" \
   -v "${CC_SANDBOX_M2_WRAPPER}:${remote_user_home}/.m2/wrapper" \
+  ${extra_volumes[@]+"${extra_volumes[@]}"} \
+  ${extra_envs[@]+"${extra_envs[@]}"} \
   -w "$workspace" \
   "$CC_SANDBOX_IMAGE" bash

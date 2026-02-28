@@ -69,6 +69,21 @@ claude
 | `CC_SANDBOX_USER` | `claude` | コンテナ内のユーザー名 |
 | `CC_SANDBOX_DOTCLAUDE` | `~/.claude-in-sandbox/.claude` | ホスト側の `.claude` ディレクトリのパス（認証情報や設定が保存される） |
 | `CC_SANDBOX_DOTCONFIG` | `~/.claude-in-sandbox/.config` | ホスト側の `.config` ディレクトリのパス |
+| `CC_SANDBOX_M2_REPO` | `claude-code-m2-repo` | Maven ローカルリポジトリを保存する Docker ボリューム名 |
+| `CC_SANDBOX_M2_WRAPPER` | `claude-code-m2-wrapper` | Maven Wrapper のキャッシュを保存する Docker ボリューム名 |
+
+### 追加マウント・環境変数の指定
+
+起動時に `-v` / `-e` オプションで追加のマウントや環境変数をコンテナに渡せる。
+
+```bash
+claude-in-sandbox -v /path/to/host:/path/in/container -e MY_VAR=value
+```
+
+| オプション | 説明 |
+| --- | --- |
+| `--volume HOST:CT`, `-v HOST:CT` | ホストのパスをコンテナにマウントする。`HOST:CONTAINER` または `HOST:CONTAINER:ro` 形式。繰り返し指定可 |
+| `--env VAR=VALUE`, `-e VAR=VALUE` | コンテナに環境変数を設定する。`VAR=VALUE` または `VAR`（ホストから継承）形式。繰り返し指定可 |
 
 ### アクセス許可ドメインの変更
 
