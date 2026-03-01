@@ -28,6 +28,8 @@ Options:
                          Format: HOST:CONTAINER or HOST:CONTAINER:ro
   --env, -e VAR=VALUE    Set an environment variable in the container (can be repeated).
                          Format: VAR=VALUE or VAR (inherits from host environment)
+  --build, -b       Force rebuild the Docker image even if Dockerfile has not changed.
+  --no-cache        Build the Docker image without using cache (implies --build).
   --help, -h        Show this help message and exit.
 EOF
 }
@@ -63,10 +65,24 @@ build_image() {
     dockerfile_path="${script_dir}/Dockerfile"
     local current_hash
     current_hash="$(sha256sum "$dockerfile_path" | cut -d' ' -f1)"
+    local build_args=()
+    if [ "$NO_CACHE" = "true" ]; then
+        build_args+=("--no-cache")
+    fi
 
-    if ! docker image inspect "$CC_SANDBOX_IMAGE" > /dev/null 2>&1; then
+    if [ "$BUILD" = "true" ]; then
+        echo "Building image '$CC_SANDBOX_IMAGE'..."
+        docker build \
+            "${build_args[@]+"${build_args[@]}"}" \
+            --label "dockerfile_hash=${current_hash}" \
+            --build-arg USERNAME="$CC_SANDBOX_USER" \
+            --tag "$CC_SANDBOX_IMAGE" \
+            "$script_dir"
+        echo "Image '$CC_SANDBOX_IMAGE' built."
+    elif ! docker image inspect "$CC_SANDBOX_IMAGE" > /dev/null 2>&1; then
         echo "Image '$CC_SANDBOX_IMAGE' does not exist. Building..."
         docker build \
+            "${build_args[@]+"${build_args[@]}"}" \
             --label "dockerfile_hash=${current_hash}" \
             --build-arg USERNAME="$CC_SANDBOX_USER" \
             --tag "$CC_SANDBOX_IMAGE" \
@@ -79,6 +95,7 @@ build_image() {
         if [ "$stored_hash" != "$current_hash" ]; then
             echo "Dockerfile has changed. Rebuilding image '$CC_SANDBOX_IMAGE'..."
             docker build \
+                "${build_args[@]+"${build_args[@]}"}" \
                 --label "dockerfile_hash=${current_hash}" \
                 --build-arg USERNAME="$CC_SANDBOX_USER" \
                 --tag "$CC_SANDBOX_IMAGE" \
@@ -177,6 +194,8 @@ list_mounts() {
 CLEANUP=false
 FORCE=false
 LIST_MOUNTS=false
+BUILD=false
+NO_CACHE=false
 extra_volumes=()
 extra_envs=()
 
@@ -185,6 +204,8 @@ while [[ $# -gt 0 ]]; do
         --cleanup)     CLEANUP=true; shift ;;
         --force|-f)    FORCE=true; shift ;;
         --list-mounts) LIST_MOUNTS=true; shift ;;
+        --build|-b)    BUILD=true; shift ;;
+        --no-cache)    NO_CACHE=true; BUILD=true; shift ;;
         --help|-h)     show_usage; exit 0 ;;
         --volume|-v)
             if [[ $# -lt 2 ]]; then
