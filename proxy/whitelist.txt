@@ -272,12 +272,18 @@ mise-java.jdx.dev
 # Java
 download.java.net
 repo.maven.apache.org
+plugins-artifacts.gradle.org
 
 # Golang
 go.abhg.dev
 go.dev
 gopkg.in
 goproxy.cn
+
+# Python
+piptrends.com
+textual.textualize.io
+www.python.org
 
 # その他
 urgm.jp
