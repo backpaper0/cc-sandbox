@@ -3,6 +3,7 @@ FROM debian
 ARG UID=1000
 ARG GID=1000
 ARG USERNAME
+ARG WORKSPACES=/workspaces
 
 # パッケージマネージャで必要なものをインストール
 RUN <<_EOF_
@@ -29,8 +30,8 @@ _EOF_
 RUN <<_EOF_
 groupadd -g "${GID}" "${USERNAME}"
 useradd -u "${UID}" -g "${GID}" -m -s /bin/bash "${USERNAME}"
-mkdir -p /workspaces
-chown "${USERNAME}":"${USERNAME}" /workspaces
+mkdir -p "${WORKSPACES}"
+chown "${USERNAME}":"${USERNAME}" "${WORKSPACES}"
 _EOF_
 
 USER "${USERNAME}"
@@ -65,4 +66,4 @@ mkdir -p ~/.m2/repository
 mkdir -p ~/.m2/wrapper
 _EOF_
 
-WORKDIR /workspaces
+WORKDIR "${WORKSPACES}"
