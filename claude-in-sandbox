@@ -13,7 +13,6 @@ CC_SANDBOX_SHARE_MISE_VOLUME="${CC_SANDBOX_SHARE_MISE_VOLUME:-${CC_SANDBOX_PREFI
 CC_SANDBOX_STATE_MISE_VOLUME="${CC_SANDBOX_STATE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-state-mise}"
 CC_SANDBOX_M2_REPO="${CC_SANDBOX_M2_REPO:-${CC_SANDBOX_PREFIX}claude-code-m2-repo}"
 CC_SANDBOX_M2_WRAPPER="${CC_SANDBOX_M2_WRAPPER:-${CC_SANDBOX_PREFIX}claude-code-m2-wrapper}"
-CC_SANDBOX_WORKSPACES="${CC_SANDBOX_WORKSPACES:-/workspaces}"
 
 show_usage() {
     cat <<EOF
@@ -58,7 +57,7 @@ get_script_dir() {
 }
 
 script_dir="$(get_script_dir)"
-workspace="${CC_SANDBOX_WORKSPACES}/$(basename "$PWD")"
+workspace="$PWD"
 remote_user_home="/home/${CC_SANDBOX_USER}"
 
 build_image() {
@@ -77,7 +76,6 @@ build_image() {
             "${build_args[@]+"${build_args[@]}"}" \
             --label "dockerfile_hash=${current_hash}" \
             --build-arg USERNAME="$CC_SANDBOX_USER" \
-			--build-arg WORKSPACES="$CC_SANDBOX_WORKSPACES" \
             --tag "$CC_SANDBOX_IMAGE" \
             "$script_dir"
         echo "Image '$CC_SANDBOX_IMAGE' built."
@@ -87,7 +85,6 @@ build_image() {
             "${build_args[@]+"${build_args[@]}"}" \
             --label "dockerfile_hash=${current_hash}" \
             --build-arg USERNAME="$CC_SANDBOX_USER" \
-			--build-arg WORKSPACES="$CC_SANDBOX_WORKSPACES" \
             --tag "$CC_SANDBOX_IMAGE" \
             "$script_dir"
         echo "Image '$CC_SANDBOX_IMAGE' built."
@@ -101,7 +98,6 @@ build_image() {
                 "${build_args[@]+"${build_args[@]}"}" \
                 --label "dockerfile_hash=${current_hash}" \
                 --build-arg USERNAME="$CC_SANDBOX_USER" \
-			    --build-arg WORKSPACES="$CC_SANDBOX_WORKSPACES" \
                 --tag "$CC_SANDBOX_IMAGE" \
                 "$script_dir"
             echo "Image '$CC_SANDBOX_IMAGE' rebuilt."

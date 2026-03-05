@@ -40,7 +40,7 @@ claude-in-sandbox
 ```
 
 実行すると必要に応じてコンテナイメージの作成、Dockerネットワークの作成、Squidコンテナの起動などを行い、Claude Codeが動くコンテナが起動する。
-カレントディレクトリがコンテナ内の `/workspaces/<ディレクトリ名>` としてマウントされ、作業ディレクトリとなる。
+カレントディレクトリがコンテナ内の同一絶対パス（例: `/path/to/your/project`）としてマウントされ、作業ディレクトリとなる。
 
 ## 初回認証
 
@@ -73,7 +73,6 @@ claude
 | `CC_SANDBOX_STATE_MISE_VOLUME` | `claude-code-state-mise` | mise の状態データを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_REPO` | `claude-code-m2-repo` | Maven ローカルリポジトリを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_WRAPPER` | `claude-code-m2-wrapper` | Maven Wrapper のキャッシュを保存する Docker ボリューム名 |
-| `CC_SANDBOX_WORKSPACES` | `/workspaces` | コンテナ内のワークスペースのベースパス |
 
 ### オプション
 
