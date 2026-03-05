@@ -69,8 +69,24 @@ claude
 | `CC_SANDBOX_USER` | `claude` | コンテナ内のユーザー名 |
 | `CC_SANDBOX_DOTCLAUDE` | `~/.claude-in-sandbox/.claude` | ホスト側の `.claude` ディレクトリのパス（認証情報や設定が保存される） |
 | `CC_SANDBOX_DOTCONFIG` | `~/.claude-in-sandbox/.config` | ホスト側の `.config` ディレクトリのパス |
+| `CC_SANDBOX_SHARE_MISE_VOLUME` | `claude-code-share-mise` | mise の共有データを保存する Docker ボリューム名 |
+| `CC_SANDBOX_STATE_MISE_VOLUME` | `claude-code-state-mise` | mise の状態データを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_REPO` | `claude-code-m2-repo` | Maven ローカルリポジトリを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_WRAPPER` | `claude-code-m2-wrapper` | Maven Wrapper のキャッシュを保存する Docker ボリューム名 |
+| `CC_SANDBOX_WORKSPACES` | `/workspaces` | コンテナ内のワークスペースのベースパス |
+
+### オプション
+
+| オプション | 説明 |
+| --- | --- |
+| `--volume HOST:CT`, `-v HOST:CT` | ホストのパスをコンテナにマウントする。`HOST:CONTAINER` または `HOST:CONTAINER:ro` 形式。繰り返し指定可 |
+| `--env VAR=VALUE`, `-e VAR=VALUE` | コンテナに環境変数を設定する。`VAR=VALUE` または `VAR`（ホストから継承）形式。繰り返し指定可 |
+| `--build`, `-b` | Dockerfile が変更されていなくてもイメージを強制的に再ビルドする |
+| `--no-cache` | キャッシュを使わずにイメージをビルドする（`--build` を含む） |
+| `--list-mounts` | コンテナが使用するすべてのバインドマウントとボリュームを表示する |
+| `--cleanup` | このスクリプトが作成したすべての Docker リソースを停止・削除する |
+| `--force`, `-f` | `--cleanup` と組み合わせて確認プロンプトをスキップする |
+| `--help`, `-h` | ヘルプメッセージを表示して終了する |
 
 ### 追加マウント・環境変数の指定
 
@@ -79,11 +95,6 @@ claude
 ```bash
 claude-in-sandbox -v /path/to/host:/path/in/container -e MY_VAR=value
 ```
-
-| オプション | 説明 |
-| --- | --- |
-| `--volume HOST:CT`, `-v HOST:CT` | ホストのパスをコンテナにマウントする。`HOST:CONTAINER` または `HOST:CONTAINER:ro` 形式。繰り返し指定可 |
-| `--env VAR=VALUE`, `-e VAR=VALUE` | コンテナに環境変数を設定する。`VAR=VALUE` または `VAR`（ホストから継承）形式。繰り返し指定可 |
 
 ### アクセス許可ドメインの変更
 
