@@ -42,6 +42,10 @@ claude-in-sandbox
 実行すると必要に応じてコンテナイメージの作成、Dockerネットワークの作成、Squidコンテナの起動などを行い、Claude Codeが動くコンテナが起動する。
 カレントディレクトリがコンテナ内の同一絶対パス（例: `/path/to/your/project`）としてマウントされ、作業ディレクトリとなる。
 
+> [!NOTE]
+> ホスト側とコンテナ内でパスを一致させているのは、`git worktree` との互換性のためである。
+> linked worktree はメイン worktree の絶対パスを `.git/worktrees/<name>/gitdir` 等に記録するため、コンテナ内外でパスが異なると `git worktree list` などが正しく機能しない。
+
 ## 初回認証
 
 コンテナ起動後、初回は Claude Code のログインが必要になる。
