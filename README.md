@@ -77,6 +77,7 @@ claude
 | `CC_SANDBOX_STATE_MISE_VOLUME` | `claude-code-state-mise` | mise の状態データを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_REPO` | `claude-code-m2-repo` | Maven ローカルリポジトリを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_WRAPPER` | `claude-code-m2-wrapper` | Maven Wrapper のキャッシュを保存する Docker ボリューム名 |
+| `CC_SANDBOX_DOTENV` | (未設定) | コンテナに渡す `.env` ファイルの絶対パス。設定すると `docker run --env-file` で読み込まれる |
 
 ### オプション
 

@@ -8,6 +8,7 @@ CC_SANDBOX_INTERNAL_NETWORK="${CC_SANDBOX_INTERNAL_NETWORK:-${CC_SANDBOX_PREFIX}
 CC_SANDBOX_PROXY_CONTAINER="${CC_SANDBOX_PROXY_CONTAINER:-${CC_SANDBOX_PREFIX}claude-code-proxy}"
 CC_SANDBOX_USER="${CC_SANDBOX_USER:-${CC_SANDBOX_PREFIX}claude}"
 CC_SANDBOX_DOTCLAUDE="${CC_SANDBOX_DOTCLAUDE:-${HOME}/.${CC_SANDBOX_PREFIX}claude-in-sandbox/.claude}"
+CC_SANDBOX_DOTENV="${CC_SANDBOX_DOTENV:-}"
 CC_SANDBOX_DOTCONFIG="${CC_SANDBOX_DOTCONFIG:-${HOME}/.${CC_SANDBOX_PREFIX}claude-in-sandbox/.config}"
 CC_SANDBOX_SHARE_MISE_VOLUME="${CC_SANDBOX_SHARE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-share-mise}"
 CC_SANDBOX_STATE_MISE_VOLUME="${CC_SANDBOX_STATE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-state-mise}"
@@ -239,6 +240,13 @@ if [ "$LIST_MOUNTS" = "true" ]; then
     exit 0
 fi
 
+if [ -n "$CC_SANDBOX_DOTENV" ]; then
+    case "$CC_SANDBOX_DOTENV" in
+        /*) ;;
+        *) echo "Error: CC_SANDBOX_DOTENV must be an absolute path: $CC_SANDBOX_DOTENV" >&2; exit 1 ;;
+    esac
+fi
+
 build_image
 
 # ネットワークがなければ作成する
@@ -308,5 +316,6 @@ docker run -it --rm \
   -v "${CC_SANDBOX_M2_WRAPPER}:${remote_user_home}/.m2/wrapper" \
   ${extra_volumes[@]+"${extra_volumes[@]}"} \
   ${extra_envs[@]+"${extra_envs[@]}"} \
+  ${CC_SANDBOX_DOTENV:+--env-file="$CC_SANDBOX_DOTENV"} \
   -w "$workspace" \
   "$CC_SANDBOX_IMAGE" bash
