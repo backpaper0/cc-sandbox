@@ -1,0 +1,17 @@
+[color]
+	ui = auto
+[alias]
+    co = checkout
+    ci = commit
+    st = status
+    br = branch
+    ca = commit --amend --no-edit --reset-author
+[core]
+	editor = vim
+	quotepath = false
+[fetch]
+	prune = true
+[pull]
+	rebase = false
+[init]
+	defaultBranch = main

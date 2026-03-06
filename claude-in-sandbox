@@ -285,6 +285,7 @@ fi
 if [ ! -d "$CC_SANDBOX_DOTCONFIG" ]; then
 	echo "Directory '$CC_SANDBOX_DOTCONFIG' does not exist. Creating..."
 	mkdir -p "$CC_SANDBOX_DOTCONFIG"
+	cp -r "${script_dir}/template/config/." "$CC_SANDBOX_DOTCONFIG/"
 	echo "Directory '$CC_SANDBOX_DOTCONFIG' created."
 fi
 
