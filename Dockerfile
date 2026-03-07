@@ -33,12 +33,15 @@ _EOF_
 
 USER "${USERNAME}"
 
-WORKDIR /home/"${USERNAME}"
+WORKDIR "/home/${USERNAME}"
 
 SHELL ["/bin/bash", "-c"]
 
-ENV CLAUDE_CONFIG_DIR="/home/"${USERNAME}"/.claude"
+ENV CLAUDE_CONFIG_DIR="/home/${USERNAME}/.claude"
 ENV TZ="Asia/Tokyo"
+ENV LANG="C.UTF-8"
+ENV LC_ALL="C.UTF-8"
+
 
 # miseをインストール
 RUN <<_EOF_

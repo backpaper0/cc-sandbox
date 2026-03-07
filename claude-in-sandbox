@@ -29,6 +29,7 @@ Options:
                          Format: HOST:CONTAINER or HOST:CONTAINER:ro
   --env, -e VAR=VALUE    Set an environment variable in the container (can be repeated).
                          Format: VAR=VALUE or VAR (inherits from host environment)
+  --name NAME       Set the container name (default: basename of current directory).
   --build, -b       Force rebuild the Docker image even if Dockerfile has not changed.
   --no-cache        Build the Docker image without using cache (implies --build).
   --help, -h        Show this help message and exit.
@@ -60,6 +61,7 @@ get_script_dir() {
 script_dir="$(get_script_dir)"
 workspace="$PWD"
 remote_user_home="/home/${CC_SANDBOX_USER}"
+container_name="$(basename "$PWD")"
 
 build_image() {
     local dockerfile_path
@@ -205,6 +207,15 @@ while [[ $# -gt 0 ]]; do
         --cleanup)     CLEANUP=true; shift ;;
         --force|-f)    FORCE=true; shift ;;
         --list-mounts) LIST_MOUNTS=true; shift ;;
+        --name)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires an argument." >&2
+                show_usage >&2
+                exit 1
+            fi
+            container_name="$2"
+            shift 2
+            ;;
         --build|-b)    BUILD=true; shift ;;
         --no-cache)    NO_CACHE=true; BUILD=true; shift ;;
         --help|-h)     show_usage; exit 0 ;;
@@ -299,8 +310,22 @@ fi
 
 network_cidr="$(docker network inspect "$CC_SANDBOX_INTERNAL_NETWORK" --format '{{(index .IPAM.Config 0).Subnet}}')"
 
+# 同名のコンテナが存在する場合、_2, _3, ... のsuffixを付けてユニークな名前にする
+resolve_container_name() {
+    local base_name="$1"
+    local name="$base_name"
+    local i=2
+    while docker inspect "$name" > /dev/null 2>&1; do
+        name="${base_name}_${i}"
+        (( i++ ))
+    done
+    echo "$name"
+}
+container_name="$(resolve_container_name "$container_name")"
+
 echo "Starting Claude Code sandbox in workspace '$workspace'..."
 docker run -it --rm \
+  --name "$container_name" \
   --network "$CC_SANDBOX_INTERNAL_NETWORK" \
   -e "http_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "https_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
