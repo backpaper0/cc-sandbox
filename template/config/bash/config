@@ -1,8 +1,20 @@
-parse_git_branch() {
-  branch=$(git branch --show-current 2>/dev/null)
-  if [ -n "$branch" ]; then
-    echo -e "($branch)"
+#!/bin/bash
+
+_name() {
+  git_common_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [ -n "$git_common_dir" ]; then
+    printf '\001\e[33m\002%s\001\e[0m\002 ' \
+      "$(basename "$(dirname "$(cd "$git_common_dir" || exit; pwd)")")"
+  else
+    printf '%s ' "$(basename "$(pwd)") "
   fi
 }
 
-PS1='\[\e[33m\]\W\[\e[0m\] \[\e[36m\]$(parse_git_branch)\[\e[0m\] \$ '
+_branch() {
+  branch=$(git branch --show-current 2>/dev/null)
+  if [ -n "$branch" ]; then
+    printf '\001\e[36m\002(%s)\001\e[0m\002 ' "$branch"
+  fi
+}
+
+PS1='$(_name)$(_branch)\$ '
