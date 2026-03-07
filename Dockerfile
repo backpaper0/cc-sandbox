@@ -56,6 +56,15 @@ curl -fsSL https://claude.ai/install.sh | bash
 echo 'alias claude="claude --allow-dangerously-skip-permissions"' >> ~/.bashrc
 _EOF_
 
+# XDG Base Directoryに従ったパスからbashの設定ファイルを読み取る
+RUN <<_EOF_
+cat <<_INNER_EOF_ >> ~/.bashrc
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bash/config" ]; then
+    . "${XDG_CONFIG_HOME:-$HOME/.config}/bash/config"
+fi
+_INNER_EOF_
+_EOF_
+
 # 必要なファイル・ディレクトリを準備
 RUN <<_EOF_
 mkdir -p ~/.claude

@@ -1,0 +1,8 @@
+parse_git_branch() {
+  branch=$(git branch --show-current 2>/dev/null)
+  if [ -n "$branch" ]; then
+    echo -e "($branch)"
+  fi
+}
+
+PS1='\[\e[33m\]\W\[\e[0m\] \[\e[36m\]$(parse_git_branch)\[\e[0m\] \$ '
