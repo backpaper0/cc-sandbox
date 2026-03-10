@@ -315,7 +315,7 @@ resolve_container_name() {
     local base_name="$1"
     local name="$base_name"
     local i=2
-    while docker inspect "$name" > /dev/null 2>&1; do
+    while docker container inspect "$name" > /dev/null 2>&1; do
         name="${base_name}_${i}"
         (( i++ ))
     done
@@ -326,6 +326,7 @@ container_name="$(resolve_container_name "$container_name")"
 echo "Starting Claude Code sandbox in workspace '$workspace'..."
 docker run -it --rm \
   --name "$container_name" \
+  --hostname "${container_name}.test" \
   --network "$CC_SANDBOX_INTERNAL_NETWORK" \
   -e "http_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "https_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
