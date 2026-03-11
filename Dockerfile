@@ -70,6 +70,9 @@ cat <<_INNER_EOF_ >> ~/.bashrc
 if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bash/config" ]; then
     . "${XDG_CONFIG_HOME:-$HOME/.config}/bash/config"
 fi
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bash/env" ]; then
+    . "${XDG_CONFIG_HOME:-$HOME/.config}/bash/env"
+fi
 _INNER_EOF_
 _EOF_
 
