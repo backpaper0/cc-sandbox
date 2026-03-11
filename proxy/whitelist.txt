@@ -9,6 +9,7 @@ statsig.anthropic.com
 platform.claude.com
 code.claude.com
 claude.ai
+mcp-proxy.anthropic.com
 
 # --- バージョン管理 ---
 github.com
@@ -293,3 +294,5 @@ learn.microsoft.com
 tuf-repo-cdn.sigstore.dev
 zenn.dev
 .github.io
+## ghコマンドのインストールで必要だった
+tmaproduction.blob.core.windows.net
