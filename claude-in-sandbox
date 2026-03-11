@@ -14,6 +14,7 @@ CC_SANDBOX_SHARE_MISE_VOLUME="${CC_SANDBOX_SHARE_MISE_VOLUME:-${CC_SANDBOX_PREFI
 CC_SANDBOX_STATE_MISE_VOLUME="${CC_SANDBOX_STATE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-state-mise}"
 CC_SANDBOX_M2_REPO="${CC_SANDBOX_M2_REPO:-${CC_SANDBOX_PREFIX}claude-code-m2-repo}"
 CC_SANDBOX_M2_WRAPPER="${CC_SANDBOX_M2_WRAPPER:-${CC_SANDBOX_PREFIX}claude-code-m2-wrapper}"
+CC_SANDBOX_LOCALGATE_CONTAINER="${CC_SANDBOX_LOCALGATE_CONTAINER:-${CC_SANDBOX_PREFIX}claude-code-localgate}"
 
 show_usage() {
     cat <<EOF
@@ -118,6 +119,7 @@ cleanup() {
         fi
         echo "This will remove the following Docker resources:"
         echo "  Container: $CC_SANDBOX_PROXY_CONTAINER"
+        echo "  Container: $CC_SANDBOX_LOCALGATE_CONTAINER"
         echo "  Network:   $CC_SANDBOX_INTERNAL_NETWORK"
         echo "  Network:   $CC_SANDBOX_NETWORK"
         echo "  Image:     $CC_SANDBOX_IMAGE"
@@ -141,6 +143,13 @@ cleanup() {
         docker stop "$CC_SANDBOX_PROXY_CONTAINER"
         echo "Removing container '$CC_SANDBOX_PROXY_CONTAINER'..."
         docker rm "$CC_SANDBOX_PROXY_CONTAINER"
+    fi
+
+    if docker inspect "$CC_SANDBOX_LOCALGATE_CONTAINER" > /dev/null 2>&1; then
+        echo "Stopping container '$CC_SANDBOX_LOCALGATE_CONTAINER'..."
+        docker stop "$CC_SANDBOX_LOCALGATE_CONTAINER"
+        echo "Removing container '$CC_SANDBOX_LOCALGATE_CONTAINER'..."
+        docker rm "$CC_SANDBOX_LOCALGATE_CONTAINER"
     fi
 
     echo "Removing network '$CC_SANDBOX_INTERNAL_NETWORK'..."
@@ -295,6 +304,25 @@ if [ "$(docker inspect -f '{{.State.Running}}' "$CC_SANDBOX_PROXY_CONTAINER" 2> 
 	echo "Container '$CC_SANDBOX_PROXY_CONTAINER' started."
 fi
 
+# localgateがなければ起動する
+if ! docker inspect "$CC_SANDBOX_LOCALGATE_CONTAINER" > /dev/null 2>&1; then
+	echo "Container '$CC_SANDBOX_LOCALGATE_CONTAINER' does not exist. Creating..."
+	docker run --detach --name "$CC_SANDBOX_LOCALGATE_CONTAINER" \
+		--hostname "${CC_SANDBOX_LOCALGATE_CONTAINER}.test" \
+		--network "$CC_SANDBOX_INTERNAL_NETWORK" \
+		--publish 9000:9000 \
+		ghcr.io/backpaper0/localgate:latest
+	docker network connect "$CC_SANDBOX_NETWORK" "$CC_SANDBOX_LOCALGATE_CONTAINER"
+	echo "Container '$CC_SANDBOX_LOCALGATE_CONTAINER' created."
+fi
+
+# localgateが起動していなければ起動する
+if [ "$(docker inspect -f '{{.State.Running}}' "$CC_SANDBOX_LOCALGATE_CONTAINER" 2> /dev/null)" = "false" ]; then
+	echo "Container '$CC_SANDBOX_LOCALGATE_CONTAINER' is stopped. Starting..."
+	docker start "$CC_SANDBOX_LOCALGATE_CONTAINER"
+	echo "Container '$CC_SANDBOX_LOCALGATE_CONTAINER' started."
+fi
+
 # ディレクトリがなければ作成する
 if [ ! -d "$CC_SANDBOX_DOTCLAUDE" ]; then
 	echo "Directory '$CC_SANDBOX_DOTCLAUDE' does not exist. Creating..."
@@ -332,6 +360,7 @@ docker run -it --rm \
   -e "https_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "no_proxy=127.0.0.1,localhost,${network_cidr},.test" \
   -e "CLAUDE_CODE_PROXY_HOST=${CC_SANDBOX_PROXY_CONTAINER}.test" \
+  -e "LOCALGATE_SERVER=http://${CC_SANDBOX_LOCALGATE_CONTAINER}.test:9000" \
   -v "${CC_SANDBOX_DOTCLAUDE}:${remote_user_home}/.claude" \
   -v "${CC_SANDBOX_DOTCONFIG}:${remote_user_home}/.config" \
   -v "${CC_SANDBOX_SHARE_MISE_VOLUME}:${remote_user_home}/.local/share/mise" \

@@ -31,6 +31,13 @@ groupadd -g "${GID}" "${USERNAME}"
 useradd -u "${UID}" -g "${GID}" -m -s /bin/bash "${USERNAME}"
 _EOF_
 
+# localgate バイナリをコピー（静的リンクの Go バイナリ）
+COPY --from=ghcr.io/backpaper0/localgate:latest /usr/local/bin/localgate /usr/local/bin/localgate
+
+# エントリーポイントスクリプトをコピー
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER "${USERNAME}"
 
 WORKDIR "/home/${USERNAME}"
@@ -74,3 +81,5 @@ mkdir -p ~/.local/state/mise
 mkdir -p ~/.m2/repository
 mkdir -p ~/.m2/wrapper
 _EOF_
+
+ENTRYPOINT ["/entrypoint.sh"]
