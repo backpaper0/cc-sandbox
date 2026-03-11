@@ -77,6 +77,8 @@ claude
 | `CC_SANDBOX_STATE_MISE_VOLUME` | `claude-code-state-mise` | mise の状態データを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_REPO` | `claude-code-m2-repo` | Maven ローカルリポジトリを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_WRAPPER` | `claude-code-m2-wrapper` | Maven Wrapper のキャッシュを保存する Docker ボリューム名 |
+| `CC_SANDBOX_LOCALGATE_CONTAINER` | `claude-code-localgate` | localgate コンテナ名 |
+| `CC_SANDBOX_LOCALGATE_PORT` | `9000` | ホスト側に公開する localgate のポート番号 |
 | `CC_SANDBOX_DOTENV` | (未設定) | コンテナに渡す `.env` ファイルの絶対パス。設定すると `docker run --env-file` で読み込まれる |
 
 ### オプション
@@ -85,6 +87,7 @@ claude
 | --- | --- |
 | `--volume HOST:CT`, `-v HOST:CT` | ホストのパスをコンテナにマウントする。`HOST:CONTAINER` または `HOST:CONTAINER:ro` 形式。繰り返し指定可 |
 | `--env VAR=VALUE`, `-e VAR=VALUE` | コンテナに環境変数を設定する。`VAR=VALUE` または `VAR`（ホストから継承）形式。繰り返し指定可 |
+| `--name NAME` | コンテナ名を指定する（デフォルト: カレントディレクトリのベース名） |
 | `--build`, `-b` | Dockerfile が変更されていなくてもイメージを強制的に再ビルドする |
 | `--no-cache` | キャッシュを使わずにイメージをビルドする（`--build` を含む） |
 | `--list-mounts` | コンテナが使用するすべてのバインドマウントとボリュームを表示する |
@@ -105,6 +108,16 @@ claude-in-sandbox -v /path/to/host:/path/in/container -e MY_VAR=value
 コンテナからのHTTP/HTTPSアクセスはSquidプロキシ経由に制限されており、`proxy/whitelist.txt` に記載されたドメインのみ通信が許可される。
 アクセスを許可したいドメインを追加・削除する場合はこのファイルを編集する。
 Squidの `dstdomain` 形式に従い、`.example.com` と記載するとサブドメインを含むすべてのホストが対象になる。
+
+### ホスト側のlocalhostへのアクセス
+
+サンドボックスコンテナはネットワークが制限されているため、ホスト側の `localhost` には直接アクセスできない。
+localgate を使うことで、ホスト側のポートへアクセスできる。
+
+localgate コンテナはホスト側のポート（デフォルト: `9000`、`CC_SANDBOX_LOCALGATE_PORT` で変更可）に公開されており、
+サンドボックスコンテナ内からは `LOCALGATE_SERVER` 環境変数（`http://claude-code-localgate.test:9000`）を通じて利用できる。
+
+コンテナ内で `localgate watch` が自動起動しており、ホスト側の localhost への通信をトンネリングする。
 
 ### 同一ネットワーク上の他コンテナへのアクセス
 
