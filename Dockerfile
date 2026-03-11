@@ -12,6 +12,7 @@ apt install -y --no-install-recommends \
   ca-certificates \
   curl \
   git \
+  gh \
   jq \
   locales \
   vim
