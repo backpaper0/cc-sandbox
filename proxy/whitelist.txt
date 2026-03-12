@@ -286,6 +286,9 @@ piptrends.com
 textual.textualize.io
 www.python.org
 
+# PostgreSQL
+.postgresql.org
+
 # その他
 urgm.jp
 golangci-lint.run
