@@ -2,7 +2,11 @@
 set -euo pipefail
 
 if [ -n "${LOCALGATE_SERVER:-}" ]; then
-    localgate watch --server "$LOCALGATE_SERVER" &
+    if [ -n "${LOCALGATE_VERBOSE:-}" ]; then
+        localgate watch --server "$LOCALGATE_SERVER" &
+    else
+        localgate watch --server "$LOCALGATE_SERVER" >/dev/null 2>&1 &
+    fi
 fi
 
 exec "$@"
