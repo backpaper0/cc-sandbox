@@ -10,6 +10,7 @@ platform.claude.com
 code.claude.com
 claude.ai
 mcp-proxy.anthropic.com
+downloads.claude.ai
 
 # --- バージョン管理 ---
 github.com
@@ -137,8 +138,7 @@ services.gradle.org
 plugins.gradle.org
 kotlin.org
 www.kotlin.org
-spring.io
-repo.spring.io
+.spring.io
 
 # --- パッケージマネージャー - その他の言語 ---
 packagist.org
@@ -274,6 +274,9 @@ mise-java.jdx.dev
 download.java.net
 repo.maven.apache.org
 plugins-artifacts.gradle.org
+central.sonatype.com
+corretto.aws
+oss.sonatype.org
 
 # Golang
 go.abhg.dev
