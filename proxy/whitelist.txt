@@ -277,6 +277,7 @@ plugins-artifacts.gradle.org
 central.sonatype.com
 corretto.aws
 oss.sonatype.org
+mvnrepository.com
 
 # Golang
 go.abhg.dev
@@ -302,3 +303,10 @@ zenn.dev
 .github.io
 ## ghコマンドのインストールで必要だった
 tmaproduction.blob.core.windows.net
+
+prometheus.io
+rieckpil.de
+oneuptime.com
+www.baeldung.com
+volkandogan.net
+dl.deno.land
