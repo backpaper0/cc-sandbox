@@ -21,13 +21,13 @@ Claude Codeを安全に`--dangerously-skip-permissions`付きで動かすため�
 このリポジトリを`git clone`する。
 
 ```bash
-git clone https://github.com/backpaper0/claude-code-environment.git
+git clone https://github.com/backpaper0/cc-sandbox.git
 ```
 
 パスが通っている場所へシンボリックリンクを作成する。
 
 ```bash
-ln -s $PWD/claude-in-sandbox $HOME/.local/bin/claude-in-sandbox
+ln -s $PWD/cc-sandbox $HOME/.local/bin/cc-sandbox
 ```
 
 ## 起動
@@ -36,7 +36,7 @@ ln -s $PWD/claude-in-sandbox $HOME/.local/bin/claude-in-sandbox
 
 ```bash
 cd /path/to/your/project
-claude-in-sandbox
+cc-sandbox
 ```
 
 実行すると必要に応じてコンテナイメージの作成、Dockerネットワークの作成、Squidコンテナの起動などを行い、Claude Codeが動くコンテナが起動する。
@@ -55,7 +55,7 @@ claude
 ```
 
 を実行すると認証フローが始まるので、案内に従って Anthropic アカウントでログインする。
-認証情報はホスト側の `~/.claude-in-sandbox` ディレクトリに保存されるため、2回目以降は再認証不要。
+認証情報はホスト側の `~/.cc-sandbox` ディレクトリに保存されるため、2回目以降は再認証不要。
 
 ## カスタマイズ
 
@@ -71,8 +71,8 @@ claude
 | `CC_SANDBOX_INTERNAL_NETWORK` | `claude-code-internal-network` | 内部専用Dockerネットワーク名 |
 | `CC_SANDBOX_PROXY_CONTAINER` | `claude-code-proxy` | Squidプロキシコンテナ名 |
 | `CC_SANDBOX_USER` | `claude` | コンテナ内のユーザー名 |
-| `CC_SANDBOX_DOTCLAUDE` | `~/.claude-in-sandbox/.claude` | ホスト側の `.claude` ディレクトリのパス（認証情報や設定が保存される） |
-| `CC_SANDBOX_DOTCONFIG` | `~/.claude-in-sandbox/.config` | ホスト側の `.config` ディレクトリのパス |
+| `CC_SANDBOX_DOTCLAUDE` | `~/.cc-sandbox/.claude` | ホスト側の `.claude` ディレクトリのパス（認証情報や設定が保存される） |
+| `CC_SANDBOX_DOTCONFIG` | `~/.cc-sandbox/.config` | ホスト側の `.config` ディレクトリのパス |
 | `CC_SANDBOX_SHARE_MISE_VOLUME` | `claude-code-share-mise` | mise の共有データを保存する Docker ボリューム名 |
 | `CC_SANDBOX_STATE_MISE_VOLUME` | `claude-code-state-mise` | mise の状態データを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_REPO` | `claude-code-m2-repo` | Maven ローカルリポジトリを保存する Docker ボリューム名 |
@@ -100,7 +100,7 @@ claude
 起動時に `-v` / `-e` オプションで追加のマウントや環境変数をコンテナに渡せる。
 
 ```bash
-claude-in-sandbox -v /path/to/host:/path/in/container -e MY_VAR=value
+cc-sandbox -v /path/to/host:/path/in/container -e MY_VAR=value
 ```
 
 ### アクセス許可ドメインの変更
