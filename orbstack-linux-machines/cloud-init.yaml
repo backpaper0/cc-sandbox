@@ -1,0 +1,173 @@
+#cloud-config
+# OrbStack の Linux machine (Ubuntu) 用セットアップ
+#
+#   orb create -c cloud-init.yaml ubuntu my-machine
+#
+# インストールするもの:
+#   - mise（apt リポジトリ）
+#   - Docker Engine（apt リポジトリ）
+#   - Claude Code（公式ネイティブインストーラ）
+#
+# 構成について:
+#   OrbStack は macOS ユーザーと同名のデフォルトユーザーを cloud-init の「完了後」に作る
+#   （UID も macOS 側と同じで 1000 とは限らない）。そのため cloud-init 実行中はまだ
+#   対象ユーザーが存在せず、runcmd の中では docker グループ追加も Claude Code の
+#   インストールもできない。
+#   そこでユーザーに依存しない部分だけを runcmd で行い、ユーザー依存の部分は
+#   provision-user.service（oneshot）に切り出してユーザーの出現を待たせている。
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - unzip
+
+write_files:
+  # --- ログインシェル共通の環境設定 -------------------------------------------
+  # OrbStack のセッションは常にログインシェルなので /etc/profile.d が読まれる。
+  # デフォルトユーザーが後から作られてもこちらは影響を受けない。
+  - path: /etc/profile.d/99-dev-env.sh
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # ユーザーローカルにインストールしたコマンド（Claude Code など）
+      case ":${PATH}:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) PATH="$HOME/.local/bin:$PATH"; export PATH ;;
+      esac
+
+      # mise（OrbStack のセッションでは profile.d が複数回評価されるため、
+      # shims が PATH に積み上がらないようガードする）
+      if [ -n "${BASH_VERSION-}" ] && command -v mise >/dev/null 2>&1; then
+        case $- in
+          *i*)
+            eval "$(mise activate bash)"
+            ;;
+          *)
+            case ":${PATH}:" in
+              *":$HOME/.local/share/mise/shims:"*) ;;
+              *) eval "$(mise activate bash --shims)" ;;
+            esac
+            ;;
+        esac
+      fi
+
+  # --- システム側のセットアップ（cloud-init の runcmd から実行）---------------
+  - path: /usr/local/sbin/provision-system.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      trap 'echo "provision-system.sh: failed at line ${LINENO}" >&2' ERR
+
+      ARCH="$(dpkg --print-architecture)"
+      CODENAME="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"
+      echo "provision-system: arch=${ARCH} codename=${CODENAME}"
+
+      install -m 0755 -d /etc/apt/keyrings
+
+      # mise の apt リポジトリ
+      curl -fsSL https://mise.jdx.dev/gpg-key.pub \
+        | gpg --dearmor -o /etc/apt/keyrings/mise-archive-keyring.gpg
+      chmod a+r /etc/apt/keyrings/mise-archive-keyring.gpg
+      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg] https://mise.jdx.dev/deb stable main" \
+        > /etc/apt/sources.list.d/mise.list
+
+      # Docker の apt リポジトリ
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${CODENAME} stable" \
+        > /etc/apt/sources.list.d/docker.list
+
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        mise \
+        docker-ce \
+        docker-ce-cli \
+        containerd.io \
+        docker-buildx-plugin \
+        docker-compose-plugin
+
+      systemctl enable --now docker
+
+      # デフォルトユーザーが作られてから走る後処理を仕込む
+      systemctl enable provision-user.service
+      systemctl start --no-block provision-user.service
+
+  # --- ユーザー側のセットアップ（デフォルトユーザー作成後に実行）-------------
+  - path: /usr/local/sbin/provision-user.sh
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      trap 'echo "provision-user.sh: failed at line ${LINENO}" >&2' ERR
+
+      # OrbStack のデフォルトユーザーは orbstack グループに入るので、それを待つ。
+      # cloud-init が作った ubuntu ユーザーを誤って掴まないよう、こちらを優先する。
+      TARGET_USER=""
+      for _ in $(seq 1 60); do
+        TARGET_USER="$(getent group orbstack 2>/dev/null | cut -d: -f4 | cut -d, -f1 || true)"
+        [ -n "$TARGET_USER" ] && break
+        sleep 2
+      done
+
+      # OrbStack 以外で使う場合のフォールバック
+      if [ -z "$TARGET_USER" ]; then
+        TARGET_USER="$(awk -F: '$3>=500 && $3<65534 && $6 ~ /^\/home\// && $7 !~ /(nologin|false)$/ { print $1; exit }' /etc/passwd || true)"
+      fi
+
+      if [ -z "$TARGET_USER" ]; then
+        echo "provision-user: default user not found" >&2
+        exit 1
+      fi
+
+      TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+      echo "provision-user: user=${TARGET_USER} home=${TARGET_HOME}"
+
+      # sudo なしで docker を使えるようにする（machine に入り直すと有効）
+      usermod -aG docker "$TARGET_USER"
+
+      # --mount のマウントポイントがホーム配下にあると、OrbStack が親ディレクトリを
+      # root 所有で先に作ってしまい、ホームがユーザーから書けなくなる。
+      # （Claude Code や mise は $HOME 配下にインストールするので致命的）
+      chown "$TARGET_USER" "$TARGET_HOME"
+
+      # Claude Code は $HOME 配下にしか入らないので、対象ユーザーとして実行する。
+      # sudo 経由だとインストーラに拒否されるため runuser を使う。
+      if [ ! -x "${TARGET_HOME}/.local/bin/claude" ]; then
+        runuser -u "$TARGET_USER" -- \
+          env HOME="$TARGET_HOME" bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
+      fi
+
+      touch /var/lib/provision-user.done
+      echo "provision-user: done"
+
+  - path: /etc/systemd/system/provision-user.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Provision the default user (docker group, Claude Code)
+      After=cloud-final.service network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/var/lib/provision-user.done
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/provision-user.sh
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - [/usr/local/sbin/provision-system.sh]
+
+final_message: "cloud-init finished after $UPTIME seconds"

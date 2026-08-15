@@ -1,0 +1,132 @@
+# OrbStack Linux machine
+
+OrbStack の Linux machine（Ubuntu）を、mise / Docker Engine / Claude Code 入りで作るための
+cloud-init 設定です。
+
+- [`cloud-init.yaml`](cloud-init.yaml) — machine 作成時に渡す cloud-config
+
+## 前提
+
+- macOS に [OrbStack](https://orbstack.dev/) がインストールされていること
+- `orb` / `orbctl` が PATH にあること（`orb version` で確認）
+- ホスト側に `~/workspace` が存在すること（machine へマウントする作業ディレクトリ）
+
+## 作成
+
+`MACHINE` は任意の machine 名に読み替えてください。
+
+```sh
+MACHINE=dev
+
+orbctl create \
+  --isolated \
+  --mount ~/workspace:/home/"$USER"/workspace \
+  --user-data cloud-init.yaml \
+  ubuntu "$MACHINE"
+```
+
+各オプションの意味:
+
+| オプション | 意味 |
+| --- | --- |
+| `--isolated` | machine を隔離モードで作る。ホストのファイル共有と各種統合（macOS の `$HOME` 自動マウント、コマンド連携など）が無効になる |
+| `--mount SOURCE:DEST` | 隔離モードの machine に、ホストのディレクトリを個別にマウントする。`--isolated` と併用する場合のみ有効 |
+| `--user-data` | cloud-init の user data。`-c` でも同じ |
+
+`--isolated` を付けると、そのままではホストのファイルは一切見えません。そこに
+`--mount` で `~/workspace` だけを通しています。マウント先は明示が必要です
+（macOS のホームは `/Users/$USER`、Linux 側は `/home/$USER` でパスが違うため、
+`~/workspace:~/workspace` とは書けません）。
+
+なお `--isolated` だけならネットワークはホストや他の machine と通じたままです。
+ネットワークも切りたい場合は `--isolate-network` を追加します。
+
+セットアップ（apt のアップグレード、Docker、Claude Code のインストール）は
+`orbctl create` が返ってきた後もバックグラウンドで続きます。完了は次のように確認します。
+
+```sh
+# cloud-init 本体の完了待ち
+orb -m "$MACHINE" -u root cloud-init status --wait
+
+# ユーザー側の後処理（docker グループ追加、Claude Code）の完了待ち
+orb -m "$MACHINE" -u root systemctl status provision-user.service
+```
+
+完了後の確認:
+
+```sh
+orb -m "$MACHINE" bash -lc 'mise --version; docker version; claude --version'
+orb -m "$MACHINE" ls -al /home/"$USER"/workspace
+```
+
+`docker` を sudo なしで使うにはグループ変更の反映が必要なので、
+`provision-user.service` の完了後に一度 machine を再起動してください。
+
+```sh
+orbctl restart "$MACHINE"
+```
+
+## 起動・停止
+
+```sh
+# 起動
+orbctl start "$MACHINE"
+
+# 停止
+orbctl stop "$MACHINE"
+
+# 再起動
+orbctl restart "$MACHINE"
+
+# 状態の確認（全 machine の一覧）
+orbctl list
+```
+
+引数なしの `orbctl stop` は OrbStack サービス全体（Docker と全 machine）を止めてしまうので、
+machine 名は必ず指定してください。
+
+machine に入る／コマンドを実行する:
+
+```sh
+# シェルに入る
+orb -m "$MACHINE"
+
+# 単発でコマンドを実行する
+orb -m "$MACHINE" uname -a
+
+# root で実行する
+orb -m "$MACHINE" -u root apt-get update
+```
+
+毎回 `-m` を書きたくない場合は、既定の machine を切り替えます。
+
+```sh
+orbctl default "$MACHINE"
+```
+
+## 削除
+
+**machine 内のファイルは警告なしに完全に失われます。** ホストの `~/workspace` は
+マウントしているだけなので消えませんが、machine のホーム配下（`~/.claude` など）は消えます。
+
+```sh
+# 確認プロンプトあり。停止中でもそのまま削除できる
+orbctl delete "$MACHINE"
+
+# 確認なしで削除
+orbctl delete -f "$MACHINE"
+```
+
+## 補足: ホームディレクトリの所有者
+
+`--mount` のマウント先をホーム配下（`/home/$USER/workspace`）にすると、OrbStack が親の
+`/home/$USER` を root 所有で先に作るため、ホームがユーザーから書けない状態になります。
+Claude Code や mise は `$HOME` 配下にインストールするので、これは致命的です。
+
+`cloud-init.yaml` の `provision-user.sh` でホームを chown し直しているため、
+上記の手順どおりに作れば対処済みです。cloud-init を使わずに machine を作った場合は、
+手動で直してください。
+
+```sh
+orb -m "$MACHINE" -u root chown "$USER" /home/"$USER"
+```
