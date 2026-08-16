@@ -2,7 +2,8 @@
 
 OrbStack の Linux machine（Ubuntu）を、mise / Docker Engine / Claude Code 入りで作るための
 cloud-init 設定です。Claude Code には Playwright MCP を登録済みなので、そのまま
-ブラウザ操作を頼めます。
+ブラウザ操作を頼めます。git や vim の設定も machine 専用のものが自動で入るので、
+作り直しても設定し直す必要はありません。
 
 - [`cloud-init.yaml`](cloud-init.yaml) — machine 作成時に渡す cloud-config
 
@@ -50,7 +51,7 @@ orbctl create \
 # cloud-init 本体の完了待ち
 orb -m "$MACHINE" -u root cloud-init status --wait
 
-# ユーザー側の後処理（docker グループ追加、Claude Code、Playwright MCP）の完了待ち
+# ユーザー側の後処理（docker グループ追加、ユーザー設定、Claude Code、Playwright MCP）の完了待ち
 orb -m "$MACHINE" -u root systemctl status provision-user.service
 ```
 
@@ -111,6 +112,7 @@ orbctl default "$MACHINE"
 
 **machine 内のファイルは警告なしに完全に失われます。** ホストの `~/workspace` は
 マウントしているだけなので消えませんが、machine のホーム配下（`~/.claude` など）は消えます。
+machine は作り直すまで使い続けるものなので、残したい作業は `~/workspace` に置いてください。
 
 ```sh
 # 確認プロンプトあり。停止中でもそのまま削除できる
@@ -120,6 +122,37 @@ orbctl delete "$MACHINE"
 orbctl delete -f "$MACHINE"
 ```
 
+## 補足: ユーザー設定
+
+machine は必要になったら作り直すので、そのたびに手で設定し直さずに済むよう、
+**この machine 専用の設定**を `cloud-init.yaml` の `write_files` に持っています。
+ホストの dotfiles はマウントも clone もしません。設定を変えたいときは
+`cloud-init.yaml` を編集します（既存の machine には反映されないので、
+その場で直すか作り直すことになります）。
+
+| 実体（`write_files`） | 配置先 |
+| --- | --- |
+| `/usr/local/share/machine-config/gitconfig` | `~/.gitconfig` |
+| `/usr/local/share/machine-config/vimrc` | `~/.vimrc` |
+| `/usr/local/share/machine-config/claude-settings.json` | `~/.claude/settings.json` |
+
+デフォルトユーザーは cloud-init の完了後に作られるため、`write_files` では
+ホーム配下に直接置けません。いったん `/usr/local/share/machine-config/` に置き、
+`provision-user.sh` がユーザー出現後に所有者を付けて配置しています。
+
+内容は「machine で最低限困らない」線に寄せてあります。
+
+- `gitconfig` — コミットに必要な `user.name` / `user.email`、`core.editor = vim`、
+  `core.quotepath = false`、`init.defaultBranch = main`、`color.ui = auto`、
+  それと `co` / `ci` / `st` / `br` / `lg` / `ca` のエイリアス
+- `vimrc` — 文字コード、シンタックス、行番号、インデント、検索まわりだけ
+- `claude-settings.json` — `language` / `theme` / `tui` のほか、
+  `skipDangerousModePermissionPrompt`（後述のエイリアス向け）や
+  `cleanupPeriodDays` などの動作設定
+
+`vim` は `packages` に追加してあります。Ubuntu の cloud image には `vim-tiny` しか
+入っておらず、`core.editor = vim` が効かないためです。
+
 ## 補足: claude のエイリアス
 
 `/etc/profile.d/99-dev-env.sh` で、確認プロンプトを全部飛ばすエイリアスを張っています。
@@ -128,7 +161,7 @@ orbctl delete -f "$MACHINE"
 alias claude="claude --allow-dangerously-skip-permissions --permission-mode bypassPermissions"
 ```
 
-machine 自体が使い捨ての隔離環境なので、この中では権限確認を省いています。
+machine 自体が隔離環境で、壊れても作り直せるので、この中では権限確認を省いています。
 bash は非対話シェルでエイリアスを展開しないため、効くのは `orb -m "$MACHINE"` で
 入った対話セッションだけです。`orb -m "$MACHINE" claude ...` のような単発実行では
 展開されないので、その場合はフラグを直接渡してください。
@@ -148,7 +181,8 @@ Claude Code の実行内容が一切止められなくなるので、machine の
 - `npx playwright install-deps` — ヘッドレスブラウザの共有ライブラリ（root で実行）
 - `npx @playwright/mcp install-browser chrome-for-testing` — ブラウザ本体。
   対象ユーザーの `~/.cache/ms-playwright` に入る
-- `claude mcp add playwright ...` — `~/.claude.json` への MCP サーバー登録
+- `claude mcp add playwright --scope user ...` — MCP サーバー登録。user スコープなので
+  `~/.claude.json` に書かれ、machine 内のどのディレクトリからでも使える
 
 日本語のページが豆腐（□）にならないよう、`fonts-noto-cjk` を `packages` に入れています。
 

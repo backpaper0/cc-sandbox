@@ -8,6 +8,7 @@
 #   - Docker Engine（apt リポジトリ）
 #   - Claude Code（公式ネイティブインストーラ）
 #   - Playwright MCP（Claude Code からブラウザを操作するため）
+#   - machine 専用のユーザー設定（.gitconfig / .vimrc / .claude/settings.json）
 #
 # 構成について:
 #   OrbStack は macOS ユーザーと同名のデフォルトユーザーを cloud-init の「完了後」に作る
@@ -26,6 +27,8 @@ packages:
   - gnupg
   - git
   - unzip
+  # gitconfig の core.editor が vim を指しているので（既定では vim-tiny しか無い）
+  - vim
   # ヘッドレスブラウザで日本語・中国語・韓国語が豆腐にならないように
   - fonts-noto-cjk
 
@@ -59,10 +62,72 @@ write_files:
         esac
       fi
 
-      # Claude Code は machine ごと使い捨てる前提なので、確認を全部飛ばす。
+      # machine 自体が隔離環境で壊れても作り直せるので、確認を全部飛ばす。
       # bash は非対話シェルでエイリアスを展開しないので、対話セッション限定になる
       # （`orb -m ... claude ...` のような単発実行には効かない）。
       alias claude="claude --allow-dangerously-skip-permissions --permission-mode bypassPermissions"
+
+  # --- machine 専用のユーザー設定 ----------------------------------------------
+  # ホストの dotfiles は持ち込まない（マウントも clone もしない）。この machine で
+  # 使う設定をここで完結して定義する。デフォルトユーザーの HOME は cloud-init の
+  # 時点では判らないので、ホーム配下への配置は provision-user.sh が行う。
+  - path: /usr/local/share/machine-config/gitconfig
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # machine 専用の git 設定
+      [user]
+      	name = Uragami Taichi
+      	email = backpaper0@gmail.com
+      [core]
+      	editor = vim
+      	quotepath = false
+      [init]
+      	defaultBranch = main
+      [color]
+      	ui = auto
+      [alias]
+        co = checkout
+        ci = commit
+        st = status
+        br = branch
+        lg = log --graph --decorate --branches
+        ca = commit --amend --no-edit --reset-author
+
+  - path: /usr/local/share/machine-config/vimrc
+    permissions: "0644"
+    owner: root:root
+    content: |
+      " machine 専用の vim 設定。ちょっとした編集ができれば十分という想定
+      set encoding=utf-8
+      set fileencodings=utf-8,cp932,euc-jp
+      syntax on
+      filetype plugin indent on
+      set number
+      set expandtab
+      set tabstop=2
+      set shiftwidth=2
+      set incsearch
+      set hlsearch
+      set ignorecase
+      set smartcase
+      set backspace=indent,eol,start
+      set laststatus=2
+
+  - path: /usr/local/share/machine-config/claude-settings.json
+    permissions: "0644"
+    owner: root:root
+    content: |
+      {
+        "awaySummaryEnabled": false,
+        "cleanupPeriodDays": 9999,
+        "disableAutoMode": "disable",
+        "language": "japanese",
+        "skipDangerousModePermissionPrompt": true,
+        "spinnerTipsEnabled": false,
+        "theme": "light",
+        "tui": "fullscreen"
+      }
 
   # --- システム側のセットアップ（cloud-init の runcmd から実行）---------------
   - path: /usr/local/sbin/provision-system.sh
@@ -147,33 +212,46 @@ write_files:
       # （Claude Code や mise は $HOME 配下にインストールするので致命的）
       chown "$TARGET_USER" "$TARGET_HOME"
 
+      # 対象ユーザーとしてコマンドを流すための小道具
+      as_user() {
+        runuser -u "$TARGET_USER" -- env HOME="$TARGET_HOME" "$@"
+      }
+
+      # --- ユーザー設定 ---------------------------------------------------------
+      # machine 専用の設定を配る。ホストの dotfiles は持ち込まない。
+      # 実体は write_files（このファイルの上のほう）にあり、ここでは配置だけ行う。
+      install -m 0644 -o "$TARGET_USER" \
+        /usr/local/share/machine-config/gitconfig "${TARGET_HOME}/.gitconfig"
+      install -m 0644 -o "$TARGET_USER" \
+        /usr/local/share/machine-config/vimrc "${TARGET_HOME}/.vimrc"
+
+      install -d -m 0755 -o "$TARGET_USER" "${TARGET_HOME}/.claude"
+      install -m 0644 -o "$TARGET_USER" \
+        /usr/local/share/machine-config/claude-settings.json \
+        "${TARGET_HOME}/.claude/settings.json"
+
       # Claude Code は $HOME 配下にしか入らないので、対象ユーザーとして実行する。
       # sudo 経由だとインストーラに拒否されるため runuser を使う。
       if [ ! -x "${TARGET_HOME}/.local/bin/claude" ]; then
-        runuser -u "$TARGET_USER" -- \
-          env HOME="$TARGET_HOME" bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
+        as_user bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
       fi
 
       # --- Playwright MCP -------------------------------------------------------
       # Claude Code は MCP サーバーを `npx` で起動するので、mise の shims から npx を
       # 引けるよう node を global に固定しておく（これが無いと shims はあっても
       # バージョン未指定で解決に失敗する）。
-      runuser -u "$TARGET_USER" -- \
-        env HOME="$TARGET_HOME" mise use -g node@lts
+      as_user mise use -g node@lts
 
       # ブラウザの実行に必要な OS パッケージ。root で入れる必要がある。
       DEBIAN_FRONTEND=noninteractive \
         mise exec node@lts -- npx -y playwright install-deps
 
       # ブラウザ本体は対象ユーザーの ~/.cache/ms-playwright に入れる
-      runuser -u "$TARGET_USER" -- \
-        env HOME="$TARGET_HOME" \
-        mise exec node@lts -- npx -y @playwright/mcp install-browser chrome-for-testing
+      as_user mise exec node@lts -- npx -y @playwright/mcp install-browser chrome-for-testing
 
       # MCP サーバーとして登録する（~/.claude.json に書かれる）
-      runuser -u "$TARGET_USER" -- \
-        env HOME="$TARGET_HOME" \
-        "${TARGET_HOME}/.local/bin/claude" mcp add playwright npx -y @playwright/mcp@latest -- --browser chromium
+      as_user "${TARGET_HOME}/.local/bin/claude" \
+        mcp add playwright --scope user -- npx -y @playwright/mcp@latest --browser chromium
 
       touch /var/lib/provision-user.done
       echo "provision-user: done"
@@ -183,7 +261,7 @@ write_files:
     owner: root:root
     content: |
       [Unit]
-      Description=Provision the default user (docker group, Claude Code, Playwright MCP)
+      Description=Provision the default user (user config, Claude Code, Playwright MCP)
       After=cloud-final.service network-online.target
       Wants=network-online.target
       ConditionPathExists=!/var/lib/provision-user.done
