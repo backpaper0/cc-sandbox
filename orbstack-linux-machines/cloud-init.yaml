@@ -76,6 +76,12 @@ write_files:
     owner: root:root
     content: |
       # machine 専用の git 設定
+      #
+      # user.name / user.email は下の [include] で上書きできる（後勝ち）。
+      # 他の人が使うときは、この YAML を編集せずに machine 側で
+      #   git config -f ~/.gitconfig.local user.name  "..."
+      #   git config -f ~/.gitconfig.local user.email "..."
+      # とすればよい。
       [user]
       	name = Uragami Taichi
       	email = backpaper0@gmail.com
@@ -93,6 +99,10 @@ write_files:
         br = branch
         lg = log --graph --decorate --branches
         ca = commit --amend --no-edit --reset-author
+      # 個人設定での上書き用。ファイルが無ければ git は黙って無視する。
+      # 位置が後ろなので、ここに書いた値が上のデフォルトより優先される。
+      [include]
+      	path = ~/.gitconfig.local
 
   - path: /usr/local/share/machine-config/vimrc
     permissions: "0644"

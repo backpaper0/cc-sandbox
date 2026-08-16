@@ -144,7 +144,8 @@ machine は必要になったら作り直すので、そのたびに手で設定
 
 - `gitconfig` — コミットに必要な `user.name` / `user.email`、`core.editor = vim`、
   `core.quotepath = false`、`init.defaultBranch = main`、`color.ui = auto`、
-  それと `co` / `ci` / `st` / `br` / `lg` / `ca` のエイリアス
+  それと `co` / `ci` / `st` / `br` / `lg` / `ca` のエイリアス。
+  末尾に `~/.gitconfig.local` の `[include]` があり、identity は後述の方法で上書きできる
 - `vimrc` — 文字コード、シンタックス、行番号、インデント、検索まわりだけ
 - `claude-settings.json` — `language` / `theme` / `tui` のほか、
   `skipDangerousModePermissionPrompt`（後述のエイリアス向け）や
@@ -152,6 +153,35 @@ machine は必要になったら作り直すので、そのたびに手で設定
 
 `vim` は `packages` に追加してあります。Ubuntu の cloud image には `vim-tiny` しか
 入っておらず、`core.editor = vim` が効かないためです。
+
+### git の user.name / user.email を変える
+
+`gitconfig` に入っている identity はこのリポジトリの持ち主のものです。`cloud-init.yaml` を
+編集しなくても、machine 側の `~/.gitconfig.local` で上書きできます。
+
+```sh
+orb -m "$MACHINE" bash -lc "
+  git config -f ~/.gitconfig.local user.name  'Your Name'
+  git config -f ~/.gitconfig.local user.email 'you@example.com'
+"
+```
+
+ホスト側の設定をそのまま持ち込むなら、こう書けます。
+
+```sh
+orb -m "$MACHINE" bash -lc "
+  git config -f ~/.gitconfig.local user.name  '$(git config --get user.name)'
+  git config -f ~/.gitconfig.local user.email '$(git config --get user.email)'
+"
+```
+
+`~/.gitconfig` の末尾に `[include] path = ~/.gitconfig.local` があり、git は後に読んだ値を
+優先するのでこちらが勝ちます。ファイルが存在しない場合は黙って無視されるため、
+何もしなければデフォルトのままです。
+
+machine を作り直すたびに実行する必要があります（`~/.gitconfig.local` は machine 内の
+ファイルなので消えます）。毎回打ちたくなければ、`cloud-init.yaml` の `gitconfig` の
+`[user]` を自分の値に書き換えてしまうのが早いです。
 
 ## 補足: claude のエイリアス
 
