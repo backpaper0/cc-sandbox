@@ -59,6 +59,11 @@ write_files:
         esac
       fi
 
+      # Claude Code は machine ごと使い捨てる前提なので、確認を全部飛ばす。
+      # bash は非対話シェルでエイリアスを展開しないので、対話セッション限定になる
+      # （`orb -m ... claude ...` のような単発実行には効かない）。
+      alias claude="claude --allow-dangerously-skip-permissions --permission-mode bypassPermissions"
+
   # --- システム側のセットアップ（cloud-init の runcmd から実行）---------------
   - path: /usr/local/sbin/provision-system.sh
     permissions: "0755"

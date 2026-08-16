@@ -120,6 +120,25 @@ orbctl delete "$MACHINE"
 orbctl delete -f "$MACHINE"
 ```
 
+## 補足: claude のエイリアス
+
+`/etc/profile.d/99-dev-env.sh` で、確認プロンプトを全部飛ばすエイリアスを張っています。
+
+```sh
+alias claude="claude --allow-dangerously-skip-permissions --permission-mode bypassPermissions"
+```
+
+machine 自体が使い捨ての隔離環境なので、この中では権限確認を省いています。
+bash は非対話シェルでエイリアスを展開しないため、効くのは `orb -m "$MACHINE"` で
+入った対話セッションだけです。`orb -m "$MACHINE" claude ...` のような単発実行では
+展開されないので、その場合はフラグを直接渡してください。
+
+素の `claude` を使いたいときは `\claude` または `command claude` で回避できます。
+
+なお、この machine はホストや外部ネットワークへ出られます。権限確認を外すと
+Claude Code の実行内容が一切止められなくなるので、machine の外に影響しうるもの
+（マウントした `~/workspace` の中身、到達できるネットワーク先）は把握しておいてください。
+
 ## 補足: Playwright MCP
 
 `provision-user.sh` で以下をまとめて済ませています。
