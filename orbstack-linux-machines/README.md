@@ -1,7 +1,8 @@
 # OrbStack Linux machine
 
 OrbStack の Linux machine（Ubuntu）を、mise / Docker Engine / Claude Code 入りで作るための
-cloud-init 設定です。
+cloud-init 設定です。Claude Code には Playwright MCP を登録済みなので、そのまま
+ブラウザ操作を頼めます。
 
 - [`cloud-init.yaml`](cloud-init.yaml) — machine 作成時に渡す cloud-config
 
@@ -41,14 +42,15 @@ orbctl create \
 なお `--isolated` だけならネットワークはホストや他の machine と通じたままです。
 ネットワークも切りたい場合は `--isolate-network` を追加します。
 
-セットアップ（apt のアップグレード、Docker、Claude Code のインストール）は
-`orbctl create` が返ってきた後もバックグラウンドで続きます。完了は次のように確認します。
+セットアップ（apt のアップグレード、Docker、Claude Code、Playwright のインストール）は
+`orbctl create` が返ってきた後もバックグラウンドで続きます。ブラウザのダウンロードがある分、
+後処理は数分かかります。完了は次のように確認します。
 
 ```sh
 # cloud-init 本体の完了待ち
 orb -m "$MACHINE" -u root cloud-init status --wait
 
-# ユーザー側の後処理（docker グループ追加、Claude Code）の完了待ち
+# ユーザー側の後処理（docker グループ追加、Claude Code、Playwright MCP）の完了待ち
 orb -m "$MACHINE" -u root systemctl status provision-user.service
 ```
 
@@ -56,6 +58,7 @@ orb -m "$MACHINE" -u root systemctl status provision-user.service
 
 ```sh
 orb -m "$MACHINE" bash -lc 'mise --version; docker version; claude --version'
+orb -m "$MACHINE" bash -lc 'claude mcp list'
 orb -m "$MACHINE" ls -al /home/"$USER"/workspace
 ```
 
@@ -116,6 +119,22 @@ orbctl delete "$MACHINE"
 # 確認なしで削除
 orbctl delete -f "$MACHINE"
 ```
+
+## 補足: Playwright MCP
+
+`provision-user.sh` で以下をまとめて済ませています。
+
+- `mise use -g node@lts` — Claude Code は MCP サーバーを `npx` で起動するため、
+  mise の shims が `npx` を解決できるよう node の global バージョンを固定する
+- `npx playwright install-deps` — ヘッドレスブラウザの共有ライブラリ（root で実行）
+- `npx @playwright/mcp install-browser chrome-for-testing` — ブラウザ本体。
+  対象ユーザーの `~/.cache/ms-playwright` に入る
+- `claude mcp add playwright ...` — `~/.claude.json` への MCP サーバー登録
+
+日本語のページが豆腐（□）にならないよう、`fonts-noto-cjk` を `packages` に入れています。
+
+`--isolate-network` を付けて machine を作るとブラウザから外部サイトへ出られません。
+Playwright を使うなら `--isolated` のみにしてください。
 
 ## 補足: ホームディレクトリの所有者
 

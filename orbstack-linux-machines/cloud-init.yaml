@@ -7,6 +7,7 @@
 #   - mise（apt リポジトリ）
 #   - Docker Engine（apt リポジトリ）
 #   - Claude Code（公式ネイティブインストーラ）
+#   - Playwright MCP（Claude Code からブラウザを操作するため）
 #
 # 構成について:
 #   OrbStack は macOS ユーザーと同名のデフォルトユーザーを cloud-init の「完了後」に作る
@@ -25,6 +26,8 @@ packages:
   - gnupg
   - git
   - unzip
+  # ヘッドレスブラウザで日本語・中国語・韓国語が豆腐にならないように
+  - fonts-noto-cjk
 
 write_files:
   # --- ログインシェル共通の環境設定 -------------------------------------------
@@ -146,6 +149,27 @@ write_files:
           env HOME="$TARGET_HOME" bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
       fi
 
+      # --- Playwright MCP -------------------------------------------------------
+      # Claude Code は MCP サーバーを `npx` で起動するので、mise の shims から npx を
+      # 引けるよう node を global に固定しておく（これが無いと shims はあっても
+      # バージョン未指定で解決に失敗する）。
+      runuser -u "$TARGET_USER" -- \
+        env HOME="$TARGET_HOME" mise use -g node@lts
+
+      # ブラウザの実行に必要な OS パッケージ。root で入れる必要がある。
+      DEBIAN_FRONTEND=noninteractive \
+        mise exec node@lts -- npx -y playwright install-deps
+
+      # ブラウザ本体は対象ユーザーの ~/.cache/ms-playwright に入れる
+      runuser -u "$TARGET_USER" -- \
+        env HOME="$TARGET_HOME" \
+        mise exec node@lts -- npx -y @playwright/mcp install-browser chrome-for-testing
+
+      # MCP サーバーとして登録する（~/.claude.json に書かれる）
+      runuser -u "$TARGET_USER" -- \
+        env HOME="$TARGET_HOME" \
+        "${TARGET_HOME}/.local/bin/claude" mcp add playwright npx -y @playwright/mcp@latest -- --browser chromium
+
       touch /var/lib/provision-user.done
       echo "provision-user: done"
 
@@ -154,7 +178,7 @@ write_files:
     owner: root:root
     content: |
       [Unit]
-      Description=Provision the default user (docker group, Claude Code)
+      Description=Provision the default user (docker group, Claude Code, Playwright MCP)
       After=cloud-final.service network-online.target
       Wants=network-online.target
       ConditionPathExists=!/var/lib/provision-user.done
