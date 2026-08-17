@@ -3,6 +3,7 @@ FROM debian
 ARG UID=1000
 ARG GID=1000
 ARG USERNAME
+ARG GOSU_VERSION=1.17
 
 # パッケージマネージャで必要なものをインストール
 RUN <<_EOF_
@@ -13,10 +14,35 @@ apt install -y --no-install-recommends \
   curl \
   git \
   gh \
+  gnupg \
   jq \
   locales \
   vim
 rm -fr /var/lib/apt/lists/*
+_EOF_
+
+# Docker Engine をインストール（コンテナ内でDocker-in-Dockerを行うため）
+RUN <<_EOF_
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+apt update
+apt install -y --no-install-recommends \
+  docker-ce \
+  docker-ce-cli \
+  containerd.io \
+  docker-buildx-plugin \
+  docker-compose-plugin
+rm -fr /var/lib/apt/lists/*
+_EOF_
+
+# gosu をインストール（root権限で起動するentrypointから非rootユーザーへ降格するため）
+RUN <<_EOF_
+curl -fsSL -o /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-$(dpkg --print-architecture)"
+chmod +x /usr/local/bin/gosu
 _EOF_
 
 # 日本語の対応
@@ -26,10 +52,11 @@ locale-gen
 update-locale LANG=ja_JP.UTF-8
 _EOF_
 
-# ユーザーを作成
+# ユーザーを作成し、dockerグループに追加
 RUN <<_EOF_
 groupadd -g "${GID}" "${USERNAME}"
 useradd -u "${UID}" -g "${GID}" -m -s /bin/bash "${USERNAME}"
+usermod -aG docker "${USERNAME}"
 _EOF_
 
 # localgate バイナリをコピー（静的リンクの Go バイナリ）
@@ -45,6 +72,7 @@ WORKDIR "/home/${USERNAME}"
 
 SHELL ["/bin/bash", "-c"]
 
+ENV CC_SANDBOX_USER="${USERNAME}"
 ENV CLAUDE_CONFIG_DIR="/home/${USERNAME}/.claude"
 ENV TZ="Asia/Tokyo"
 ENV LANG="C.UTF-8"
@@ -85,5 +113,9 @@ mkdir -p ~/.local/state/mise
 mkdir -p ~/.m2/repository
 mkdir -p ~/.m2/wrapper
 _EOF_
+
+# dockerd の起動にはroot権限が必要なため、entrypoint.shはrootで実行する
+# （entrypoint.sh内でgosuを使い、実際のコマンドは非rootユーザーへ降格して実行する）
+USER root
 
 ENTRYPOINT ["/entrypoint.sh"]

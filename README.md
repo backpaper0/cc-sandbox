@@ -5,9 +5,10 @@ Claude Codeを安全に`--dangerously-skip-permissions`付きで動かすため�
 ## 特徴
 
 - Dockerコンテナに閉じ込めることで、予期せぬファイル更新・削除を防ぐ(例: `rm -fr $HOME`など)
-- `internal`なDockerネットワークに閉じ込めることで、予期せぬ通信を防ぐ(例: 怪しいウェブサイトへのPOSTリクエストなど)
+- `internal`なDockerネットワークに閉じ込めることで、ホスト側のポートなど本来到達できるべきでない宛先への通信を防ぐ
 - bindマウントは最低限、ワークスペースとして扱うディレクトリと少しの設定ファイルのみ
-- インターネット通信は`internal`なネットワークと`internal`でないネットワークの両方へ接続しているSquidコンテナを経由して行う
+- インターネット通信は`internal`なネットワークと`internal`でないネットワークの両方へ接続しているSquidコンテナを経由して行う（ドメインの制限は行っておらず、インターネットへは自由にアクセスできる）
+- コンテナ内でDocker（Docker-in-Docker）を利用できる
 - ホスト側はVSCode等のエディタで該当ディレクトリを開いてClaude Codeが作成・編集したファイルを確認する
 
 ![](./architecture.drawio.svg)
@@ -77,6 +78,7 @@ claude
 | `CC_SANDBOX_STATE_MISE_VOLUME` | `claude-code-state-mise` | mise の状態データを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_REPO` | `claude-code-m2-repo` | Maven ローカルリポジトリを保存する Docker ボリューム名 |
 | `CC_SANDBOX_M2_WRAPPER` | `claude-code-m2-wrapper` | Maven Wrapper のキャッシュを保存する Docker ボリューム名 |
+| `CC_SANDBOX_DOCKER_DATA` | `claude-code-docker-data` | コンテナ内Docker（Docker-in-Docker）のデータ（イメージ等）を保存する Docker ボリューム名 |
 | `CC_SANDBOX_LOCALGATE_CONTAINER` | `claude-code-localgate` | localgate コンテナ名 |
 | `CC_SANDBOX_LOCALGATE_PORT` | `9000` | ホスト側に公開する localgate のポート番号 |
 | `CC_SANDBOX_DOTENV` | (未設定) | コンテナに渡す `.env` ファイルの絶対パス。設定すると `docker run --env-file` で読み込まれる |
@@ -103,10 +105,24 @@ claude
 cc-sandbox -v /path/to/host:/path/in/container -e MY_VAR=value
 ```
 
-### アクセス許可ドメインの変更
+### Docker-in-Docker
 
-コンテナからのHTTP/HTTPSアクセスはSquidプロキシ経由に制限されており、`proxy/whitelist.txt` に記載されたドメインのみ通信が許可される。
-アクセスを許可したいドメインを追加・削除する場合はこのファイルを編集する。
+サンドボックスコンテナ内で `docker` コマンドが利用できる。コンテナ内で起動したDockerコンテナはホストのDockerとは独立しており、データは `CC_SANDBOX_DOCKER_DATA` ボリュームに保存される。
+
+Docker-in-Dockerを実現するため、サンドボックスコンテナは `--privileged` オプション付きで起動している。
+これにより、コンテナのファイルシステム保護（予期せぬファイル更新・削除の防止）以外の面でホストカーネルに対する分離は弱くなる点に留意すること（ネットワーク的な分離、すなわち`internal`なDockerネットワークによる制限は影響を受けない）。
+
+### アクセス許可ドメインの制限
+
+コンテナからのHTTP/HTTPSアクセスはSquidプロキシを経由するが、デフォルトではドメインによる制限を行っておらず、インターネットへ自由にアクセスできる。
+アクセスできるドメインを制限したい場合は、`proxy/squid.conf` の `http_access allow all` を以下のように書き換え、`proxy/whitelist.txt` に許可したいドメインを記載する。
+
+```
+acl allowed_sites dstdomain "/etc/squid/whitelist.txt"
+http_access allow allowed_sites
+http_access deny !allowed_sites
+```
+
 Squidの `dstdomain` 形式に従い、`.example.com` と記載するとサブドメインを含むすべてのホストが対象になる。
 
 ### ホスト側のlocalhostへのアクセス

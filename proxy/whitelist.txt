@@ -1,3 +1,9 @@
+# NOTE: 現在このファイルはsquid.confから参照されておらず未使用（インターネットアクセスは制限なしで許可している）。
+# ドメイン単位でのアクセス制限を復活させたい場合は、squid.confのhttp_accessを以下のように書き換えて使用する。
+#   acl allowed_sites dstdomain "/etc/squid/whitelist.txt"
+#   http_access allow allowed_sites
+#   http_access deny !allowed_sites
+#
 # Claude Code on the Web - デフォルトで許可されたドメイン
 # Squid whitelist (acl whitelist dstdomain 形式)
 # ワイルドカード *.example.com は .example.com として記載（Squid の dstdomain は自動的にサブドメインを含む）

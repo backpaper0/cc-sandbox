@@ -14,6 +14,7 @@ CC_SANDBOX_SHARE_MISE_VOLUME="${CC_SANDBOX_SHARE_MISE_VOLUME:-${CC_SANDBOX_PREFI
 CC_SANDBOX_STATE_MISE_VOLUME="${CC_SANDBOX_STATE_MISE_VOLUME:-${CC_SANDBOX_PREFIX}claude-code-state-mise}"
 CC_SANDBOX_M2_REPO="${CC_SANDBOX_M2_REPO:-${CC_SANDBOX_PREFIX}claude-code-m2-repo}"
 CC_SANDBOX_M2_WRAPPER="${CC_SANDBOX_M2_WRAPPER:-${CC_SANDBOX_PREFIX}claude-code-m2-wrapper}"
+CC_SANDBOX_DOCKER_DATA="${CC_SANDBOX_DOCKER_DATA:-${CC_SANDBOX_PREFIX}claude-code-docker-data}"
 CC_SANDBOX_LOCALGATE_CONTAINER="${CC_SANDBOX_LOCALGATE_CONTAINER:-${CC_SANDBOX_PREFIX}claude-code-localgate}"
 CC_SANDBOX_LOCALGATE_PORT="${CC_SANDBOX_LOCALGATE_PORT:-9000}"
 
@@ -128,6 +129,7 @@ cleanup() {
         echo "  Volume:    $CC_SANDBOX_STATE_MISE_VOLUME"
         echo "  Volume:    $CC_SANDBOX_M2_REPO"
         echo "  Volume:    $CC_SANDBOX_M2_WRAPPER"
+        echo "  Volume:    $CC_SANDBOX_DOCKER_DATA"
         echo ""
         echo "Host directories will NOT be removed."
         echo ""
@@ -170,6 +172,8 @@ cleanup() {
     docker volume rm "$CC_SANDBOX_M2_REPO" 2>/dev/null || true
     echo "Removing volume '$CC_SANDBOX_M2_WRAPPER'..."
     docker volume rm "$CC_SANDBOX_M2_WRAPPER" 2>/dev/null || true
+    echo "Removing volume '$CC_SANDBOX_DOCKER_DATA'..."
+    docker volume rm "$CC_SANDBOX_DOCKER_DATA" 2>/dev/null || true
 
     echo "Cleanup complete."
 }
@@ -186,6 +190,7 @@ list_mounts() {
     echo "  ${CC_SANDBOX_STATE_MISE_VOLUME} → ${remote_user_home}/.local/state/mise"
     echo "  ${CC_SANDBOX_M2_REPO} → ${remote_user_home}/.m2/repository"
     echo "  ${CC_SANDBOX_M2_WRAPPER} → ${remote_user_home}/.m2/wrapper"
+    echo "  ${CC_SANDBOX_DOCKER_DATA} → /var/lib/docker"
     if [[ ${#extra_volumes[@]} -gt 0 ]]; then
         echo ""
         echo "Additional mounts (--volume):"
@@ -357,6 +362,7 @@ docker run -it --rm \
   --name "$container_name" \
   --hostname "${container_name}.test" \
   --network "$CC_SANDBOX_INTERNAL_NETWORK" \
+  --privileged \
   -e "http_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "https_proxy=http://${CC_SANDBOX_PROXY_CONTAINER}.test:3128" \
   -e "no_proxy=127.0.0.1,localhost,${network_cidr},.test" \
@@ -370,6 +376,7 @@ docker run -it --rm \
   -v "${script_dir}/proxy/maven/settings.xml:${remote_user_home}/.m2/settings.xml:ro" \
   -v "${CC_SANDBOX_M2_REPO}:${remote_user_home}/.m2/repository" \
   -v "${CC_SANDBOX_M2_WRAPPER}:${remote_user_home}/.m2/wrapper" \
+  -v "${CC_SANDBOX_DOCKER_DATA}:/var/lib/docker" \
   ${extra_volumes[@]+"${extra_volumes[@]}"} \
   ${extra_envs[@]+"${extra_envs[@]}"} \
   ${CC_SANDBOX_DOTENV:+--env-file="$CC_SANDBOX_DOTENV"} \
