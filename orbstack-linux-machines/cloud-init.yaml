@@ -46,6 +46,8 @@ write_files:
         *) PATH="$HOME/.local/bin:$PATH"; export PATH ;;
       esac
 
+      export EDITOR=vim
+
       # mise（OrbStack のセッションでは profile.d が複数回評価されるため、
       # shims が PATH に積み上がらないようガードする）
       if [ -n "${BASH_VERSION-}" ] && command -v mise >/dev/null 2>&1; then
