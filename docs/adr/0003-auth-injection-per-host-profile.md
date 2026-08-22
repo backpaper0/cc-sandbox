@@ -1,0 +1,8 @@
+# Claude Code認証はホストごとのローカル設定ファイルから環境変数として注入する
+
+私的環境（macOS）はClaude Codeのサブスクリプション認証、業務環境（WSL2）はAmazon Bedrock経由のAPIキー認証と、ホストによって認証方式が異なる。調査の結果、対話ログインで作られる`~/.claude/.credentials.json`は自動リフレッシュされず、期限切れ時の再ログインにはファイルへの書き込み権限が必要になることが判明した。使い捨て・複数インスタンス同時起動という運用に合わせ、`.credentials.json`の直接マウントは採用せず、macOS側では`claude setup-token`で発行する長期OAuthトークンを、WSL2側ではBedrock APIキーを、それぞれホストごとのローカル専用設定ファイル（Git管理外）から環境変数として各サンドボックスインスタンスに注入する方式とした。
+
+## Considered Options
+
+- `~/.claude/.credentials.json`をread-onlyマウント — 自動更新がなく、期限切れ後の再ログインができないため見送った
+- 起動のたびに`claude login`し直す — 使い捨てで頻繁に作り直す運用と相性が悪いため見送った
