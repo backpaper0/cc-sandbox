@@ -37,6 +37,7 @@ Claude Codeをbypass permissionsモードで使うと、コマンド実行やフ
 23. As a developer, I want the provisioning CLI to accept a project directory and a profile/instance name and handle everything else, so that spinning up a new sandbox is a single, memorable command.
 24. As a developer, I want to list currently running sandbox instances, so that I can see what's active before starting a new one or tearing one down.
 25. As a developer, I want the sandbox-to-host network block to be verified at least on the WSL2/Linux-native Docker case, so that I have a documented, testable baseline, with macOS-specific verification tracked as a known follow-up.
+26. As a developer, I want a Playwright MCP server available in the sandbox out of the box, so that Claude Code can drive a headless browser against my project's dev server to verify and test web UI behavior without any per-project setup.
 
 ## Implementation Decisions
 
@@ -47,9 +48,10 @@ Claude Codeをbypass permissionsモードで使うと、コマンド実行やフ
 - **ディスク**: ホストのプロジェクトディレクトリ1つを本体コンテナにbind mountする（1インスタンス=1プロジェクト）。`~/.ssh`・`~/.aws`等の機密はマウント対象に含めない運用とし、CLI側での除外機構は設けない（運用ルールに委ねる）。
 - **ネットワーク**（ADR-0002）: インスタンスごとに専用のuser-defined bridgeネットワークを作成する。`up`実行時に `DOCKER-USER` iptablesチェーンへ、そのネットワークのサブネットからホストのプライベートIP帯（RFC1918）への到達をDROPするルールを追加し、`down`時に除去する。`--internal`は使わずインターネットアクセスは許可のままにする。macOS側での`host.docker.internal`迂回リスクは本スペックでは未検証のまま進める（Out of Scope）。
 - **インスタンス分離**: 各インスタンスは専用のDocker network・専用のプロジェクト用bind mountを持つ。ポートは固定せずDockerにランダム割当させ、`up`の出力で確認できるようにする。
-- **キャッシュ永続化**: mise/uv/npm/Maven(`~/.m2`)/Dockerイメージレイヤー用に、全インスタンス共通の名前付きボリュームを用意し、本体コンテナ・DinDサイドカーにマウントする。`down`ではこれらのボリュームを削除しない。
+- **キャッシュ永続化**: mise/uv/npm/Maven(`~/.m2`)/Dockerイメージレイヤー/Playwrightブラウザバイナリ用に、全インスタンス共通の名前付きボリュームを用意し、本体コンテナ・DinDサイドカーにマウントする。`down`ではこれらのボリュームを削除しない。
 - **code-server**: 本体コンテナに同居させる。`127.0.0.1`にのみバインドし、パスワード認証を有効にする。`up`はアクセスURLとパスワードの取得方法を出力する。
 - **認証プロファイル**（ADR-0003）: ホストごとにローカル専用の設定ファイル（Git管理外、例 `~/.sandbox/env.private` / `~/.sandbox/env.work`）を用意し、`--profile`で読み込む対象を切り替える。`private`プロファイルは`claude setup-token`で発行した長期OAuthトークンを、`work`プロファイルはAmazon BedrockのAPIキー関連の環境変数を保持する。CLIはこのファイルを読み込み本体コンテナへ環境変数として注入する。`~/.claude/.credentials.json`の直接マウントは行わない。
+- **Playwright MCPサーバー**: 本体コンテナのイメージにPlaywright MCPサーバーを焼き込み、ユーザースコープのMCP設定として全サンドボックスインスタンス共通で有効化する（プロジェクトごとの`.mcp.json`には依存しない）。headlessモードで動作し、本体コンテナ上でdeveloperが起動するdevサーバー(localhost)を主な検証対象とする。VNC等によるライブ目視は提供せず、Claude Codeが取得するスクリーンショット/スナップショットを対話内で確認する運用とする。ブラウザバイナリ(Chromium等)はキャッシュ永続化用の共有ボリュームに保存する。
 
 ## Testing Decisions
 
@@ -64,6 +66,7 @@ Claude Codeをbypass permissionsモードで使うと、コマンド実行やフ
   - 2つのインスタンスを同時に起動し、互いのネットワーク・ボリュームが分離されている（相互到達不可）こと
   - `down`後もキャッシュ用の名前付きボリュームが残り、再度`up`した際に再利用されること
   - `--profile private` / `--profile work` それぞれで、対応する環境変数が本体コンテナ内に注入されていること
+  - Playwright MCPサーバー経由で、本体コンテナ上のdevサーバーにheadlessブラウザからアクセスし、スクリーンショット取得等の基本操作が動作すること
 - **先行事例**: このリポジトリにはまだテストコードが存在しない。E2Eテストはシェルベースの統合テスト（bats等）として新規に書く想定。
 
 ## Out of Scope

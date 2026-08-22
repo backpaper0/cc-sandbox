@@ -5,8 +5,12 @@ Claude Code を bypass permissions モードで安全に動かすため、ホス
 ## Language
 
 **サンドボックス**:
-Claude Code と mise/uv/Python/Java/Node.js/Docker/Vim/code-server 一式を含む、ホストから隔離された使い捨ての開発ワークスペース（本体コンテナ + DinDサイドカー等のコンテナ群一式）の設計・構成そのものを指す。
+Claude Code と mise/uv/Python/Java/Node.js/Docker/Vim/code-server/Playwright MCPサーバー 一式を含む、ホストから隔離された使い捨ての開発ワークスペース（本体コンテナ + DinDサイドカー等のコンテナ群一式）の設計・構成そのものを指す。
 _Avoid_: 環境, コンテナ（単体を指すには曖昧）
+
+**Playwright MCPサーバー**:
+本体コンテナのイメージに焼き込まれ、全サンドボックスインスタンス共通でユーザースコープ有効化されるMCPサーバー。Claude Codeがheadlessブラウザを操作し、本体コンテナ上で動くdevサーバー等のWeb画面の動作確認・検証に使う。ライブ目視（VNC等）は提供せず、スナップショット/スクリーンショットによる事後確認のみ。
+_Avoid_: ブラウザ自動化, E2Eテストツール（Playwright MCPサーバーに統一する）
 
 **サンドボックスインスタンス**:
 特定のプロジェクト用に起動された、サンドボックス一式（本体コンテナ・DinDサイドカー・専用network・専用volume）の実行単位。他のインスタンスとは相互に隔離される。
