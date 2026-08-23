@@ -17,10 +17,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       unzip \
       xz-utils \
       iptables \
+      docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 # Network isolation runs inside the container (see docs/adr/0004); `bin/sandbox up`
-# invokes this as root once the container is running.
+# invokes this as root once the container is running. blocked-ranges.sh is shared
+# with sandbox/isolate-forward.sh (the DinD sidecar's own isolation, ticket 05),
+# which sources it from the same path via a bind mount instead of a build (see
+# sandbox/docker-compose.yml's `dind` service).
+COPY blocked-ranges.sh /usr/local/sbin/sandbox-blocked-ranges
 COPY isolate.sh /usr/local/sbin/sandbox-isolate
 RUN chmod 0755 /usr/local/sbin/sandbox-isolate
 

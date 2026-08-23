@@ -12,6 +12,14 @@ services:
     # (e.g. for manual validation) without going through bin/sandbox.
     env_file:
       - ${SANDBOX_ENV_FILE:-/dev/null}
+    # DinD sidecar (ticket 05): points the container's `docker` CLI at the nested
+    # daemon in the `dind` service instead of a local one. isolate.sh exempts the
+    # `dind` service's address from the isolation rules below so this keeps working
+    # once they're applied.
+    environment:
+      - DOCKER_HOST=tcp://dind:2375
+    depends_on:
+      - dind
     # code-server (ticket 04): loopback-only + random host port, per the spec's
     # per-instance port isolation. The container-side bind stays 0.0.0.0 (see
     # entrypoint.sh); this publish line is what actually restricts reachability
@@ -22,3 +30,30 @@ services:
       - ${PROJECT_DIR}:/workspace
     working_dir: /workspace
     command: ["sleep", "infinity"]
+
+  # DinD sidecar (ticket 05, ADR-0001): a privileged `docker:dind` container gives
+  # the sandbox service a nested Docker daemon for `docker run`/Testcontainers,
+  # without exposing the host's own daemon. It shares this compose project's
+  # network with `sandbox`, so it's subject to the same 172.16.0.0/12-etc. block
+  # in isolate.sh -- see the exemption there -- and its own nested containers get
+  # isolated in turn by isolate-forward.sh (see bin/sandbox's
+  # apply_dind_network_isolation).
+  dind:
+    image: docker:28-dind
+    privileged: true
+    environment:
+      # Disables TLS so `sandbox` can reach it over plain tcp://dind:2375. Nothing
+      # *outside* this compose network can reach this port at all (ADR-0001), and
+      # `sandbox` reaching it is the intended, deliberately-exempted path (see
+      # isolate.sh's dind_ip) rather than something this setting needs to guard
+      # against -- the dev user having full control of this daemon is exactly what
+      # the ticket asks for, the same way it already has passwordless sudo.
+      - DOCKER_TLS_CERTDIR=
+    # Mirrors sandbox/isolate.sh's approach: rather than baking the isolation
+    # script into a custom dind image, mount it into the stock image and have
+    # bin/sandbox `docker exec` it once the daemon is up. blocked-ranges.sh is
+    # mounted at the same path the sandbox image's Dockerfile COPYs it to, so
+    # isolate-forward.sh can source it identically to isolate.sh.
+    volumes:
+      - ./isolate-forward.sh:/usr/local/sbin/sandbox-isolate-forward:ro
+      - ./blocked-ranges.sh:/usr/local/sbin/sandbox-blocked-ranges:ro

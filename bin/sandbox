@@ -90,20 +90,48 @@ apply_network_isolation() {
   docker exec -u root "${container_id}" /usr/local/sbin/sandbox-isolate "${SANDBOX_USER}"
 }
 
-# code-server (a Node process) takes a moment to start listening after the
-# container itself is running. Poll instead of assuming it's ready, so `up`
-# doesn't report a URL that isn't actually serving anything yet.
-wait_for_code_server() {
+# Applies the DinD sidecar's isolation rules (ticket 05, see
+# sandbox/isolate-forward.sh): blocks containers started inside it from reaching
+# host-side services, the same way apply_network_isolation does for the sandbox
+# container itself.
+apply_dind_network_isolation() {
+  local project_name="$1"
+  local dind_container_id
+  dind_container_id="$(compose "${project_name}" ps -q dind)"
+  if [[ -z "${dind_container_id}" ]]; then
+    return 1
+  fi
+  docker exec -u root "${dind_container_id}" sh /usr/local/sbin/sandbox-isolate-forward
+}
+
+# Shared by wait_for_dind/wait_for_code_server below: both are "poll a readiness
+# command inside the container for up to 30s" and differ only in that command.
+wait_until() {
   local container_id="$1"
+  shift
   local _
   for _ in $(seq 1 30); do
-    if docker exec -u "${SANDBOX_USER}" "${container_id}" \
-        curl -sS -m 2 -o /dev/null http://127.0.0.1:8080/ 2>/dev/null; then
+    if docker exec -u "${SANDBOX_USER}" "${container_id}" "$@" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
   done
   return 1
+}
+
+# The nested Docker daemon in the `dind` service takes a moment to start listening
+# after the container itself is running. Poll instead of assuming it's ready, so
+# `up` doesn't report success before `docker`/Testcontainers actually work inside
+# the sandbox.
+wait_for_dind() {
+  wait_until "$1" docker info
+}
+
+# code-server (a Node process) takes a moment to start listening after the
+# container itself is running. Poll instead of assuming it's ready, so `up`
+# doesn't report a URL that isn't actually serving anything yet.
+wait_for_code_server() {
+  wait_until "$1" curl -sS -m 2 -o /dev/null http://127.0.0.1:8080/
 }
 
 cmd_up() {
@@ -170,6 +198,26 @@ cmd_up() {
   # no sandbox at all, since the whole point is to run Claude Code unsupervised in it.
   if [[ -z "${container_id}" ]] || ! apply_network_isolation "${container_id}"; then
     echo "error: failed to apply network isolation for '${project_name}'; tearing down" >&2
+    compose "${project_name}" down >/dev/null 2>&1 || true
+    exit 1
+  fi
+
+  # wait_for_dind before apply_dind_network_isolation, not after: the nested dockerd
+  # installs its own DOCKER-USER/DOCKER-FORWARD chains ahead of anything already in
+  # FORWARD when *it* starts up (see sandbox/isolate-forward.sh and docs/adr/0004's
+  # addendum). Applying our rule first would let a dockerd that finishes starting
+  # afterward re-take the top position with its own ACCEPT, silently defeating the
+  # isolation. `docker info` succeeding is a reasonable proxy for "dockerd has
+  # already set up its own chains", since that happens during its startup, before
+  # the API responds.
+  if ! wait_for_dind "${container_id}"; then
+    echo "error: DinD sidecar did not become ready in '${project_name}'; tearing down" >&2
+    compose "${project_name}" down >/dev/null 2>&1 || true
+    exit 1
+  fi
+
+  if ! apply_dind_network_isolation "${project_name}"; then
+    echo "error: failed to apply network isolation for the DinD sidecar in '${project_name}'; tearing down" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi

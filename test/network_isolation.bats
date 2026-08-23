@@ -40,12 +40,11 @@ teardown_file() {
   rm -rf "$PROJECT_DIR"
 }
 
-# The container's bridge gateway -- the host-side address a container can normally
-# route to. Reachability of a host service through it varies by platform, so what
-# matters here is only that the sandbox cannot get to it.
+# Reachability of the sandbox container's bridge gateway (see helpers.bash's
+# gateway_ip_of) through it varies by platform, so what matters here is only that
+# the sandbox cannot get to it.
 gateway_ip() {
-  docker inspect "$(container_id)" \
-    --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'
+  gateway_ip_of "$(container_id)"
 }
 
 @test "up starts the sandbox with network isolation applied" {

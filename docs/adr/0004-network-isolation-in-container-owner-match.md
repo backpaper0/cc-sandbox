@@ -85,14 +85,26 @@ ticket 02 のフォローアップとしてmacOS実機（OrbStack）で検証し
 * IPv6経路は実測できていない。現在の環境ではコンテナにIPv6アドレスもルートも存在しないことを確認済みだが、IPv6を有効にしたDocker daemonでの挙動は未検証。
 * Docker Desktop（macOS/Windows）での実機検証は未実施。OrbStackでのみ確認している。`host.docker.internal`を実行時解決する実装のため理屈の上では追随するはずだが、Docker Desktopが実際にどのアドレスを返すかは確認していない。
 * WSL2/Linux-native Dockerでの実機検証は未実施。ホスト側iptablesに依存しなくなったため成立する見込みは高いが、bridge gateway経由でホストの`0.0.0.0`サービスに到達する経路（Linuxではこれが主経路）が実際に塞がるかは実測が必要。
-* ticket 05 のDinDサイドカーとの関係。ブロック対象にRFC1918全体が含まれるため、同じネットワーク上のサイドカーへの通信も遮断される。ticket 05 側でサンドボックス自身のサブネットを除外する等の対処が必要になる（ADR-0002 の時点から引き継いでいる既知の制約）。
 
 ## 再検討のトリガー
 
 * ticket 03 以降で、コンテナ起動時にClaude Codeを自動起動する構成に変更するとき（起動からルール適用までの窓が実害を持つようになる）
-* ticket 05 でDinDサイドカーを追加するとき（ブロック範囲の除外設計が必要になる）
 * 防ぎたい対象が「誤操作」から「意図的な脱出」へ変わったとき（rootを隔離できない前提が崩れる）
 * Docker daemonでIPv6を有効にするとき
+
+## 追記: ticket 05（DinDサイドカー）での解決
+
+上記で挙げていた「ticket 05 のDinDサイドカーとの関係」は、サブネット全体の除外ではなく、`dind`サービスのアドレスをサービス名で実行時解決して個別に例外化する形で解決した（`sandbox/isolate.sh`の`dind_ip`）。サブネット全体を除外するとbridge gateway自体への到達も許してしまい、`test/network_isolation.bats`が検証している「bridge gateway経由でのホスト到達を塞ぐ」という保証が崩れるため、単一アドレスの例外に留めている。
+
+DinD内で起動されたコンテナ（Testcontainers等）自体の隔離は、本ADRのOUTPUT + owner match方式をそのまま適用できない別の課題だった。それらのコンテナの通信はネストされたdockerdによってNAT・転送されるため、DinDサイドカー自身のFORWARDチェーンを通る一方、owner matchが前提とする「ローカルで生成されたプロセスの所有者」が存在しない。`sandbox/isolate-forward.sh`はDinDサイドカー側でFORWARDチェーンに同じブロック対象を適用することで対応した。
+
+検証中に、DinDサイドカーが自ら管理する`DOCKER-USER`/`DOCKER-FORWARD`チェーンが`FORWARD`チェーンの先頭近くにあり、ACCEPT判定でnetfilterのチェーン走査自体を打ち切ってしまうことが分かった。ルールを`-A`で末尾に追加すると、そのACCEPTより後にしか評価されないため一度も効かない。`sandbox-isolate-forward`は`-I FORWARD 1`で先頭に挿入することでこれを回避している。さらに、`bin/sandbox`側で`apply_dind_network_isolation`を`wait_for_dind`（ネストされたdockerdの起動完了待ち）より先に呼んでいると、この`-I FORWARD 1`を後から追い抜く形でネストされたdockerd自身のチェーン構築が発生しうるレースコンディションになることも分かった。`wait_for_dind`を先に完了させてから`apply_dind_network_isolation`を呼ぶ順序に変更し、ネストされたdockerdが自分のチェーンを構築し終えた後で確実に先頭を取れるようにした。
+
+**`dind_ip`例外がもたらす脅威モデルへの影響について**: この例外により、`dev`ユーザーは（sudoなしで）特権かつTLS無効のDinDサイドカーのDocker APIに全面的にアクセスできる。これは新たなリスクではなく、ADR-0001が受け入れた「特権コンテナはサンドボックスという境界の内側に閉じている」という前提の直接の帰結であり、`dev`ユーザーが既にパスワードなしsudoを持つ（spec User Story 19）のと同じ線引きに乗る。本ADRの脅威モデル（「誤操作や意図しない副作用」を防ぐものであり「意図的な脱出」は対象外）はticket 05でも変わっていない。
+
+**もう1つ、`isolate-forward.sh`側で対称の問題が見つかった。** DinDサイドカーが属するcomposeネットワーク自体のサブネット（例: `172.18.0.0/16`）は、ブロック対象の`172.16.0.0/12`に包含される。本体コンテナがDinD経由で起動したコンテナのpublished portへ接続すると（`docker run -p`でTestcontainersが公開するポートへ本体コンテナから到達する経路そのもの）、その応答パケットはネストされたブリッジからこの外向きインターフェースへ転送されるが、宛先である本体コンテナ自身のアドレスも同じ`172.16.0.0/12`に含まれてしまい、`isolate.sh`の`dind_ip`例外と対になる例外がFORWARD側になければ拒否されてしまう。IPを個別解決して例外化する方式（`dind_ip`と同じやり方）ではなく、`-m conntrack --ctstate ESTABLISHED,RELATED -j RETURN`をブロックルールより前に置く方式で解決した。DinD側から見て「本体コンテナが張った接続の応答」は常にESTABLISHED/RELATEDになる一方、DinD内のコンテナが host 宛てに自発的に張る新規接続はNEW状態のままブロックルールに到達するため、双方向を区別する目的にはIPを解決するより素直で、`sandbox`サービスのアドレスをDNSで解決する必要もない。
+
+実装: `sandbox/isolate-forward.sh`、`sandbox/isolate.sh`の`dind_ip`例外、`bin/sandbox`の`apply_dind_network_isolation`（`wait_for_dind`より後に実行）。
 
 ## 補足情報
 

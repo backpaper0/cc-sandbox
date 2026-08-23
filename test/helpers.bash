@@ -18,3 +18,21 @@ container_id() {
 exec_in() {
   docker exec -u dev "$(container_id)" bash -lc "$1"
 }
+
+# The DinD sidecar (ticket 05) shares the sandbox container's compose project, so
+# it's found the same way: by that project label, filtered down to the `dind`
+# service.
+dind_container_id() {
+  local project
+  project="$(docker inspect "$(container_id)" --format '{{ index .Config.Labels "com.docker.compose.project" }}')"
+  docker ps -q --filter "label=com.docker.compose.project=${project}" --filter "label=com.docker.compose.service=dind"
+}
+
+# The bridge gateway of a given container's (single) network -- the host-side
+# address it can normally route to. Used by both test/network_isolation.bats (for
+# the sandbox container) and test/dind_testcontainers.bats (for the dind sidecar)
+# to check that isolation blocks this path regardless of which container it's
+# applied to.
+gateway_ip_of() {
+  docker inspect "$1" --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'
+}

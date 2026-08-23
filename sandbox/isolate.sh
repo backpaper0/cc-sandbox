@@ -17,11 +17,9 @@ set -eu
 sandbox_user="${1:-dev}"
 uid="$(id -u "${sandbox_user}")"
 
-# Destinations treated as "host side":
-#   RFC1918        -- the LAN and the container's own bridge gateway
-#   169.254.0.0/16 -- link-local, incl. cloud metadata endpoints
-#   100.64.0.0/10  -- CGNAT space, used by some Docker Desktop configurations
-blocked='10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10'
+# shellcheck source=blocked-ranges.sh
+. /usr/local/sbin/sandbox-blocked-ranges
+blocked="${SANDBOX_BLOCKED_RANGES}"
 
 # OrbStack and Docker Desktop resolve host.docker.internal to an address outside
 # RFC1918 (0.250.250.254 on OrbStack), so the ranges above do not cover it. It is
@@ -41,6 +39,29 @@ else
 fi
 iptables -C OUTPUT -j SANDBOX_ISOLATION 2>/dev/null \
   || iptables -A OUTPUT -j SANDBOX_ISOLATION
+
+# Exempt the DinD sidecar (ticket 05, docs/adr/0004's open point on ticket 05): it's
+# a compose service on this same private network, but its address falls inside the
+# RFC1918 ranges blocked below. Resolving it by service name and exempting just
+# that address -- rather than the whole subnet -- keeps the bridge gateway itself
+# blocked (see test/network_isolation.bats's gateway_ip test). Must be added before
+# the REJECT rules below: iptables evaluates a chain top-down, first match wins.
+#
+# This script runs right after `compose up -d --build` returns, which doesn't
+# guarantee the embedded DNS already has the `dind` alias registered. Retried
+# rather than a single lookup, so a lost race here doesn't turn into every
+# sandbox<->dind connection being rejected -- including the `docker info` check
+# bin/sandbox's wait_for_dind depends on -- until the next `up`.
+dind_ip=""
+attempt=1
+while [ -z "${dind_ip}" ] && [ "${attempt}" -le 10 ]; do
+  dind_ip="$(getent ahostsv4 dind 2>/dev/null | awk 'NR==1{print $1}' || true)"
+  [ -n "${dind_ip}" ] || sleep 0.5
+  attempt=$((attempt + 1))
+done
+if [ -n "${dind_ip}" ]; then
+  iptables -A SANDBOX_ISOLATION -m owner --uid-owner "${uid}" -d "${dind_ip}" -j RETURN
+fi
 
 # REJECT rather than DROP: a blocked call fails immediately instead of hanging
 # until it times out, which makes an accidental hit obvious rather than looking
