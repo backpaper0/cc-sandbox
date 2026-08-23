@@ -6,7 +6,10 @@
 setup_file() {
   export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
   export PROJECT_DIR
-  PROJECT_DIR="$(mktemp -d)"
+  # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
+  # a symlink into /private/var, and the CLI records the physical path it mounts.
+  # Comparing the two forms below would never match.
+  PROJECT_DIR="$(cd "$(mktemp -d)" && pwd -P)"
 }
 
 teardown_file() {

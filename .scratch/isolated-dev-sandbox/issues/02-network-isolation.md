@@ -44,3 +44,66 @@
 - **将来の既知の制約としてコード内にコメントを追加**: `RFC1918_RANGES`はサンドボックス自身のサブネットも含むため、ticket05でDinDサイドカーが同じネットワークに同居すると本体コンテナ↔サイドカー間通信も一緒にDROPされてしまう。ticket05側で対処が必要な旨をコード上に明記した。
 
 見送った指摘: なし（全指摘に対応済み）。
+
+### 実機検証（フォローアップ）とネットワーク隔離方式の変更
+
+macOS実機でフォローアップ検証を行った結果、**ADR-0002の方式（ホスト側`DOCKER-USER`/`INPUT`チェーンへのルール投入）がmacOSでは原理的に成立しないことが判明したため、方式を変更した**（[ADR-0004](../../../docs/adr/0004-network-isolation-in-container-owner-match.md)、ADR-0002をsupersede）。上のチェックリストの要件（ホストの`127.0.0.1`/`0.0.0.0`向けサービスへ到達不可、インターネットへは到達可、ホストに残留物なし）はいずれも満たしているが、**それを実現する層が「ホスト側iptables」から「サンドボックス本体コンテナ内のiptables」へ変わっている**。
+
+**検証環境**: macOS (Darwin 25.5.0, arm64) / OrbStack / Docker Engine 29.4.0 (client darwin/arm64, server linux/arm64) / Storage Driver: overlay2 / Kernel 7.0.14-orbstack / bats (Homebrew)
+
+#### 判明した問題
+
+1. **前セッションでビルド不可だった`sandbox/Dockerfile`は、このホストでは問題なくビルドできた。** 前セッションの`Invalid cross-device link`(EXDEV)エラーは、ネストしたDocker daemon固有の問題だったと確定した。
+
+2. **macOSホストには`iptables`が存在しない**（Docker daemonはOrbStackのLinux VM内で動く）。加えてパスワードなしsudoも未設定。そのため`bin/sandbox up`は`apply_network_isolation`で必ず失敗し、fail-closed設計に従ってコンテナを破棄して`exit 1`していた。結果として**ticket 01の`test/basic_up_down.bats`が6件中5件failするリグレッションが発生していた**（ticket 02実装前は6/6 green）。fail-closed設計自体は正しく機能しており、残留リソースは一切なかった。
+
+3. **ADR-0002が未検証事項として残していた`host.docker.internal`迂回は実在した。** ルール適用なしの状態で実測した結果:
+
+   | 経路 | 結果 |
+   | :--- | :--- |
+   | bridge gateway `192.168.166.1:18901` | 到達不可（Linux-native Dockerとは挙動が異なる） |
+   | `host.docker.internal:18901` | **HTTP 200（到達可能）** |
+   | `127.0.0.1:18902` | 到達不可 |
+
+   `host.docker.internal`の解決先は`0.250.250.254`で、**RFC1918の範囲外**。ADR-0002が定めたRFC1918宛DROPルールでは、仮にVM内で実行したとしてもこの経路を塞げない。
+
+#### 採用した方式（ユーザー判断）
+
+「Ubuntuコンテナにiptablesをインストールして非rootユーザーを隔離する。rootユーザーの隔離不可は許容」というユーザーの判断に基づき、サンドボックス本体コンテナ内の`OUTPUT`チェーン + owner match（`-m owner --uid-owner`）で`dev`ユーザーの通信のみを遮断する方式に変更した。
+
+実装前にPoCで成立を確認した（`ubuntu:24.04` + `--cap-add NET_ADMIN`、user-defined bridge上）:
+- `dev`(uid 1000) → `host.docker.internal:18901` = 遮断
+- `dev` → `example.com` = HTTP 200（インターネット到達維持）
+- `dev` からのDNS解決 = 維持
+- root → `host.docker.internal` = HTTP 200（隔離対象外、設計通り）
+
+**PoCで見つかった落とし穴**: default bridgeネットワークではresolv.confの`nameserver`が`0.250.250.200`を指すため、ブロック範囲に巻き込まれてDNSごと死ぬ。composeが作るuser-defined bridgeではembedded DNSが`127.0.0.11`（loopback）になるため問題ない（上流への転送はdockerd側で行われ`OUTPUT`チェーンを通らない）。この回帰を捕まえるため、DNS解決を検証するテストを追加した。
+
+#### 変更内容
+
+- `sandbox/isolate.sh`（新規）: コンテナ内で実行される隔離スクリプト。専用チェーン`SANDBOX_ISOLATION`を作り、`up`再実行時はflushして作り直す（冪等）。ブロック対象はRFC1918 3レンジ + `169.254.0.0/16`(link-local) + `100.64.0.0/10`(CGNAT) + **実行時に解決した`host.docker.internal`のIP**。`-j DROP`ではなく`-j REJECT`を使い、遮断されたアクセスがタイムアウト待ちにならず即座に失敗するようにした。
+- `sandbox/Dockerfile`: `iptables`パッケージを追加し、`isolate.sh`を`/usr/local/sbin/sandbox-isolate`に配置。
+- `sandbox/docker-compose.yml`: `cap_add: NET_ADMIN`を追加。
+- `bin/sandbox`: ホスト側iptablesを叩くコードを全廃。`network_subnet_for_project`・`remove_network_isolation`・`RFC1918_RANGES`を削除し、`apply_network_isolation`は`docker exec -u root <cid> /usr/local/sbin/sandbox-isolate dev`の1行になった。`cmd_up`はコンテナID取得を先に行い、ID取得失敗時も含めてfail-closedでteardownする。`cmd_down`はルール除去が不要になり`compose down`のみになった（ルールはコンテナと寿命を共にするため、ホストに残留物が原理的に生じない）。`shellcheck`クリーン。
+
+#### テスト側で見つかったバグ
+
+方式変更後も両テストがfailし続けたが、原因は実装ではなく**テスト側のバグ**だった。macOSの`mktemp -d`は`/var/folders/...`（symlink経由の論理パス）を返すが、`bin/sandbox`はticket 02のcode-reviewで入れた`pwd -P`により`/private/var/folders/...`（物理パス）でマウントする。テストの`container_id()`は`$PROJECT_DIR`とマウントSourceを完全一致で比較するため、コンテナを永久に見つけられなかった。両テストの`setup_file`で`PROJECT_DIR="$(cd "$(mktemp -d)" && pwd -P)"`と正規化して解消。`up`自体は隔離適用まで含め最初から成功していた。
+
+#### 結果
+
+- `test/basic_up_down.bats`: **6/6 green**（リグレッション解消）
+- `test/network_isolation.bats`: **8/8 green**
+
+`test/network_isolation.bats`はsudoを一切使わなくなり、ホスト側の権限なしで完走する。テスト内容も方式変更に合わせて書き換えた（`host.docker.internal`経由とbridge gateway経由の両方を検証、DNS解決の検証、`up`再実行後も隔離が維持されることの検証を追加。ホスト側iptablesのルール数を数える検証は不要になったため削除）。
+
+**テストが偽陽性でないことも確認済み**: 同一コンテナで`iptables -F SANDBOX_ISOLATION`を実行してルールを外すと、`dev`から`host.docker.internal:18901`へHTTP 200で到達できるようになる（隔離ありでは`000`）。
+
+#### 残課題
+
+- **specの更新が必要**: `spec.md`のImplementation Decisions「ネットワーク」節はADR-0002（`DOCKER-USER`チェーン方式）を前提とした記述のままになっている。合意文書のためこのセッションでは書き換えていない。
+- WSL2/Linux-native Dockerでの実機検証は未実施。ホスト側iptablesに依存しなくなったため成立する見込みは高いが、Linuxでの主経路であるbridge gateway経由の遮断は実測が必要。
+- Docker Desktopでの実機検証は未実施（OrbStackのみ）。
+- IPv6は対象外。現環境ではコンテナにIPv6アドレス・ルートともに存在しないことを確認済み。
+- rootは隔離できない（設計上の許容事項、ADR-0004参照）。
+- ticket 05（DinDサイドカー）でブロック範囲の除外設計が必要な点は、ADR-0002の時点から変わらず残っている。

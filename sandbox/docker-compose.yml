@@ -2,6 +2,10 @@ services:
   sandbox:
     build: .
     init: true
+    # Needed so `bin/sandbox up` can install the isolation rules from inside the
+    # container (see docs/adr/0004).
+    cap_add:
+      - NET_ADMIN
     volumes:
       - ${PROJECT_DIR}:/workspace
     working_dir: /workspace
