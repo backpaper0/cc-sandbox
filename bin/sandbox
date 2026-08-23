@@ -5,6 +5,15 @@ set -euo pipefail
 SANDBOX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${SANDBOX_ROOT}/sandbox/docker-compose.yml"
 
+# RFC1918 private address space (see docs/adr/0002-network-isolation-docker-user-iptables.md).
+# NOTE: this also covers the sandbox's own subnet (Docker allocates bridge subnets
+# from this same space), so once a second container joins the sandbox network on
+# the same subnet (e.g. the DinD sidecar, ticket 05), these DROP rules will also
+# block traffic between that sidecar and the main container. Ticket 05 will need to
+# either exclude the sandbox's own subnet from these ranges or route DinD traffic
+# some other way.
+RFC1918_RANGES=(10.0.0.0/8 172.16.0.0/12 192.168.0.0/16)
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -42,6 +51,74 @@ compose() {
   docker compose -p "${project_name}" -f "${COMPOSE_FILE}" "$@"
 }
 
+network_subnet_for_project() {
+  local project_name="$1"
+  local net_ids
+  net_ids="$(docker network ls --filter "label=com.docker.compose.project=${project_name}" -q)"
+  local count
+  count="$(grep -c . <<<"${net_ids}" || true)"
+  # Anything other than exactly one match is ambiguous (or means there's no
+  # network yet) -- picking one arbitrarily could scope the isolation rules to
+  # the wrong network and leave the real sandbox subnet unprotected.
+  if [[ "${count}" -ne 1 ]]; then
+    return 1
+  fi
+  docker network inspect "${net_ids}" --format '{{(index .IPAM.Config 0).Subnet}}'
+}
+
+# Removes any DOCKER-USER/INPUT DROP rules previously added for this project. Safe
+# to call even if no rules exist yet (e.g. before the first apply, for idempotency).
+remove_network_isolation() {
+  local project_name="$1"
+  local subnet="$2"
+  if [[ -z "${subnet}" ]]; then
+    return 0
+  fi
+  local range
+  for range in "${RFC1918_RANGES[@]}"; do
+    sudo iptables -D DOCKER-USER -s "${subnet}" -d "${range}" \
+      -m comment --comment "sandbox:${project_name}" -j DROP 2>/dev/null || true
+  done
+  # DOCKER-USER is a FORWARD-chain hook, so it never sees traffic addressed to an
+  # IP the host itself owns (e.g. the bridge's own gateway IP) -- that's delivered
+  # locally via INPUT instead. A host service bound to 0.0.0.0 is reachable at that
+  # gateway IP, so blocking DOCKER-USER alone leaves it exposed; INPUT closes that gap.
+  sudo iptables -D INPUT -s "${subnet}" \
+    -m comment --comment "sandbox:${project_name}" -j DROP 2>/dev/null || true
+}
+
+apply_network_isolation() {
+  local project_name="$1"
+  local subnet
+  subnet="$(network_subnet_for_project "${project_name}")" || return 1
+  if [[ -z "${subnet}" ]]; then
+    return 1
+  fi
+
+  # Idempotent: drop any stale rules from a previous `up` before re-adding, so
+  # re-running `up` against an already-running instance doesn't pile up duplicates.
+  remove_network_isolation "${project_name}" "${subnet}"
+
+  # Each insert is checked explicitly rather than relying on `set -e`: this function
+  # is called from an `if` condition in cmd_up, where `set -e` does not apply, so an
+  # unchecked failure here would silently leave the sandbox partially or wholly
+  # unisolated. On failure, roll back whatever rules did get inserted rather than
+  # leaving a partial ruleset behind.
+  local range
+  for range in "${RFC1918_RANGES[@]}"; do
+    if ! sudo iptables -I DOCKER-USER 1 -s "${subnet}" -d "${range}" \
+        -m comment --comment "sandbox:${project_name}" -j DROP; then
+      remove_network_isolation "${project_name}" "${subnet}"
+      return 1
+    fi
+  done
+  if ! sudo iptables -I INPUT 1 -s "${subnet}" \
+      -m comment --comment "sandbox:${project_name}" -j DROP; then
+    remove_network_isolation "${project_name}" "${subnet}"
+    return 1
+  fi
+}
+
 cmd_up() {
   if [[ $# -lt 1 ]]; then
     echo "error: 'up' requires a project directory" >&2
@@ -50,11 +127,17 @@ cmd_up() {
   fi
 
   local project_dir
-  project_dir="$(cd "$1" && pwd)"
+  project_dir="$(cd "$1" && pwd -P)"
   local project_name
   project_name="$(compose_project_name "${project_dir}")"
 
   PROJECT_DIR="${project_dir}" compose "${project_name}" up -d --build
+
+  if ! apply_network_isolation "${project_name}"; then
+    echo "error: failed to apply network isolation for '${project_name}'; tearing down" >&2
+    PROJECT_DIR="${project_dir}" compose "${project_name}" down >/dev/null 2>&1 || true
+    exit 1
+  fi
 
   local container_id
   container_id="$(PROJECT_DIR="${project_dir}" compose "${project_name}" ps -q sandbox)"
@@ -78,7 +161,7 @@ cmd_down() {
   # valid absolute path for the no-argument form, where the dir isn't known.
   local project_dir="/nonexistent"
   if [[ $# -ge 1 ]]; then
-    project_dir="$(cd "$1" && pwd)"
+    project_dir="$(cd "$1" && pwd -P)"
     project_name="$(compose_project_name "${project_dir}")"
   else
     local names
@@ -96,7 +179,16 @@ cmd_down() {
     project_name="${names}"
   fi
 
+  # Look the subnet up while the network still exists -- `compose down` removes it.
+  local subnet
+  subnet="$(network_subnet_for_project "${project_name}" || true)"
+
+  # Tear down the containers/network first and only then drop the isolation rules,
+  # so that if `compose down` fails partway, the still-running sandbox is left
+  # isolated (fail closed) rather than exposed with no rules protecting it.
   PROJECT_DIR="${project_dir}" compose "${project_name}" down
+
+  remove_network_isolation "${project_name}" "${subnet}"
 }
 
 main() {
