@@ -6,6 +6,12 @@ services:
     # container (see docs/adr/0004).
     cap_add:
       - NET_ADMIN
+    # See docs/adr/0003: bin/sandbox resolves --profile to a host-side, git-ignored
+    # file (or /dev/null when no profile is given) and points this at it. The
+    # :-/dev/null default keeps `docker compose config`/`up` runnable directly
+    # (e.g. for manual validation) without going through bin/sandbox.
+    env_file:
+      - ${SANDBOX_ENV_FILE:-/dev/null}
     volumes:
       - ${PROJECT_DIR}:/workspace
     working_dir: /workspace

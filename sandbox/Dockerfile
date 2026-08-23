@@ -3,6 +3,9 @@ FROM ubuntu:24.04
 ARG USERNAME=dev
 ARG USER_UID=1000
 ARG USER_GID=1000
+# Pinned (rather than @latest) so bumping the version invalidates just this build
+# layer instead of relying on cache misses that never happen.
+ARG CLAUDE_CODE_VERSION=2.1.241
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
@@ -45,6 +48,10 @@ RUN curl -fsSL https://mise.run | sh
 RUN mise use --global python@3.12 node@22 java@temurin-21
 
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh
+
+# `mise reshim` makes the globally-installed `claude` binary visible on PATH
+# through mise's node shim (see docs/adr/0003 for how auth reaches it).
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && mise reshim
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

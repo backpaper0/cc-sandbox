@@ -7,6 +7,8 @@
 # The rules are installed inside the container, so these tests need no sudo and run
 # identically whether the daemon is native Linux or a VM on macOS.
 
+load helpers
+
 setup_file() {
   export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
   export PROJECT_DIR
@@ -38,30 +40,12 @@ teardown_file() {
   rm -rf "$PROJECT_DIR"
 }
 
-# Identify the sandbox container purely by the externally observable fact that
-# it bind-mounts $PROJECT_DIR at /workspace (see test/basic_up_down.bats).
-container_id() {
-  local cid
-  for cid in $(docker ps -q --filter 'label=com.docker.compose.project'); do
-    if docker inspect "${cid}" \
-        --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{"\n"}}{{end}}{{end}}' \
-        | grep -qxF "${PROJECT_DIR}"; then
-      echo "${cid}"
-      return 0
-    fi
-  done
-}
-
 # The container's bridge gateway -- the host-side address a container can normally
 # route to. Reachability of a host service through it varies by platform, so what
 # matters here is only that the sandbox cannot get to it.
 gateway_ip() {
   docker inspect "$(container_id)" \
     --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'
-}
-
-exec_in() {
-  docker exec -u dev "$(container_id)" bash -lc "$1"
 }
 
 @test "up starts the sandbox with network isolation applied" {

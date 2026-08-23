@@ -12,13 +12,48 @@ SANDBOX_USER=dev
 usage() {
   cat <<'EOF'
 Usage:
-  bin/sandbox up <project-dir>
+  bin/sandbox up <project-dir> [--profile <private|work>]
   bin/sandbox down [project-dir]
 
   up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
+        --profile loads ~/.sandbox/env.<profile> (see docs/adr/0003) and injects its
+        variables into the container so Claude Code is authenticated without an
+        interactive login.
   down  Tear down the sandbox instance. If <project-dir> is omitted, the single
         running instance (if there is exactly one) is torn down.
 EOF
+}
+
+# Resolves --profile <private|work> to its host-side, git-ignored env file
+# (see docs/adr/0003-auth-injection-per-host-profile.md). Fails loudly rather than
+# silently skipping injection, since a sandbox that looks up but isn't actually
+# authenticated is a confusing failure mode to debug from inside bypass permissions.
+resolve_profile_env_file() {
+  local profile="$1"
+  case "${profile}" in
+    private | work) ;;
+    "")
+      echo "error: --profile requires a non-empty value ('private' or 'work')" >&2
+      exit 1
+      ;;
+    *)
+      echo "error: unknown profile '${profile}' (expected 'private' or 'work')" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ -z "${HOME:-}" ]]; then
+    echo "error: \$HOME is not set; cannot resolve --profile ${profile}" >&2
+    exit 1
+  fi
+
+  local path="${HOME}/.sandbox/env.${profile}"
+  if [[ ! -f "${path}" ]]; then
+    echo "error: profile file not found: ${path}" >&2
+    echo "Create it with the '${profile}' profile's environment variables before using --profile ${profile}." >&2
+    exit 1
+  fi
+  echo "${path}"
 }
 
 slugify() {
@@ -56,27 +91,70 @@ apply_network_isolation() {
 }
 
 cmd_up() {
-  if [[ $# -lt 1 ]]; then
+  local project_dir=""
+  local profile=""
+  local profile_given=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        if [[ $# -lt 2 ]]; then
+          echo "error: --profile requires an argument" >&2
+          exit 1
+        fi
+        profile="$2"
+        profile_given=true
+        shift 2
+        ;;
+      --profile=*)
+        profile="${1#--profile=}"
+        profile_given=true
+        shift
+        ;;
+      -*)
+        echo "error: unknown option '$1'" >&2
+        usage >&2
+        exit 1
+        ;;
+      *)
+        if [[ -n "${project_dir}" ]]; then
+          echo "error: unexpected argument '$1'" >&2
+          exit 1
+        fi
+        project_dir="$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "${project_dir}" ]]; then
     echo "error: 'up' requires a project directory" >&2
     usage >&2
     exit 1
   fi
 
-  local project_dir
-  project_dir="$(cd "$1" && pwd -P)"
+  project_dir="$(cd "${project_dir}" && pwd -P)"
   local project_name
   project_name="$(compose_project_name "${project_dir}")"
 
-  PROJECT_DIR="${project_dir}" compose "${project_name}" up -d --build
+  # /dev/null keeps docker-compose.yml's env_file resolvable even without --profile.
+  local env_file="/dev/null"
+  if [[ "${profile_given}" == true ]]; then
+    env_file="$(resolve_profile_env_file "${profile}")"
+  fi
+
+  export PROJECT_DIR="${project_dir}"
+  export SANDBOX_ENV_FILE="${env_file}"
+
+  compose "${project_name}" up -d --build
 
   local container_id
-  container_id="$(PROJECT_DIR="${project_dir}" compose "${project_name}" ps -q sandbox)"
+  container_id="$(compose "${project_name}" ps -q sandbox)"
 
   # Fail closed: a sandbox that came up without its isolation rules is worse than
   # no sandbox at all, since the whole point is to run Claude Code unsupervised in it.
   if [[ -z "${container_id}" ]] || ! apply_network_isolation "${container_id}"; then
     echo "error: failed to apply network isolation for '${project_name}'; tearing down" >&2
-    PROJECT_DIR="${project_dir}" compose "${project_name}" down >/dev/null 2>&1 || true
+    compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
 
@@ -118,7 +196,9 @@ cmd_down() {
   fi
 
   # The isolation rules live inside the container, so removing it removes them too.
-  PROJECT_DIR="${project_dir}" compose "${project_name}" down
+  export PROJECT_DIR="${project_dir}"
+  export SANDBOX_ENV_FILE="/dev/null"
+  compose "${project_name}" down
 }
 
 main() {
