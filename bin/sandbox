@@ -207,6 +207,23 @@ apply_network_isolation() {
   docker exec -u root "${container_id}" /usr/local/sbin/sandbox-isolate "${SANDBOX_USER}"
 }
 
+# Populates a Playwright cache volume created before ticket 10. This deliberately
+# runs only after apply_network_isolation: doing it from the container entrypoint
+# could start a browser download in the gap before the OUTPUT rules are installed
+# (the startup-window constraint documented by ADR-0004). New volumes are already
+# seeded from the image, so this is normally a cheap no-op. The shared-volume lock
+# serializes the one-time repair when multiple instances start together.
+ensure_playwright_browser() {
+  local container_id="$1"
+  docker exec -u "${SANDBOX_USER}" "${container_id}" bash -lc '
+    mkdir -p "${HOME}/.cache/ms-playwright"
+    (
+      flock 9
+      playwright install chromium
+    ) 9>"${HOME}/.cache/ms-playwright/.install.lock"
+  '
+}
+
 # Applies the DinD sidecar's isolation rules (ticket 05, see
 # sandbox/isolate-forward.sh): blocks containers started inside it from reaching
 # host-side services, the same way apply_network_isolation does for the sandbox
@@ -372,6 +389,12 @@ cmd_up() {
   # no sandbox at all, since the whole point is to run Claude Code unsupervised in it.
   if [[ -z "${container_id}" ]] || ! apply_network_isolation "${container_id}"; then
     echo "error: failed to apply network isolation for '${project_name}'; tearing down" >&2
+    compose "${project_name}" down >/dev/null 2>&1 || true
+    exit 1
+  fi
+
+  if ! ensure_playwright_browser "${container_id}"; then
+    echo "error: failed to install the Playwright browser in '${project_name}'; tearing down" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi

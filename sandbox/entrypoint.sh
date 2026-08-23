@@ -14,16 +14,6 @@
 # required, retrievable after the fact" behavior the ticket wants.
 set -euo pipefail
 
-# The Playwright cache is a persistent named volume. New volumes are seeded from
-# the image, while volumes created before ticket 10 may be empty; flock also
-# prevents two concurrently-starting instances from downloading into the shared
-# cache at the same time.
-mkdir -p "${HOME}/.cache/ms-playwright"
-(
-  flock 9
-  playwright install chromium
-) 9>"${HOME}/.cache/ms-playwright/.install.lock"
-
 code-server --bind-addr 0.0.0.0:8080 /workspace >/tmp/code-server.log 2>&1 &
 
 exec "$@"

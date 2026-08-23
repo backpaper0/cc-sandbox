@@ -80,8 +80,9 @@ RUN npm install -g \
       --output-dir /tmp/playwright-mcp-output
 
 # Install Chromium's OS libraries into the image and seed the browser cache.
-# entrypoint.sh repeats the browser install as a cheap no-op so an already-created
-# ticket-07 cache volume that predates this layer is populated on first use too.
+# bin/sandbox repeats the browser install after applying network isolation as a
+# cheap no-op, so an already-created ticket-07 cache volume that predates this
+# layer is populated safely on first use too.
 RUN sudo env PATH="${PATH}" "$(npm prefix -g)/bin/playwright" install-deps chromium \
     && playwright install chromium
 
