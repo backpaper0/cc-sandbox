@@ -14,6 +14,7 @@ usage() {
 Usage:
   bin/sandbox up <project-dir> [--profile <private|work>] [--name <slug>]
   bin/sandbox down [project-dir] [--name <slug>]
+  bin/sandbox list
 
   up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
         --profile loads ~/.sandbox/env.<profile> (see docs/adr/0003) and injects its
@@ -25,6 +26,8 @@ Usage:
   down  Tear down a sandbox instance, identified by <project-dir> or by --name
         (whichever the matching 'up' used). If neither is given, the single
         running instance (if there is exactly one) is torn down.
+  list  Show every currently running sandbox instance: its name/slug, the
+        project directory it has mounted, and its code-server address.
 EOF
 }
 
@@ -132,6 +135,14 @@ compose() {
 # already ties the project name 1:1 to that directory, so re-running `up`
 # against the same directory is the existing, intentional "keep isolation
 # up to date" behavior (see network_isolation.bats).
+# The host path bind-mounted at /workspace in the given container -- shared by
+# check_name_not_in_use_by_other_dir (collision guard) and list_row (`list`
+# output), so this inspect --format template lives in exactly one place.
+container_workspace_dir() {
+  docker inspect "$1" \
+    --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}'
+}
+
 check_name_not_in_use_by_other_dir() {
   local project_name="$1"
   local project_dir="$2"
@@ -151,8 +162,7 @@ check_name_not_in_use_by_other_dir() {
     return 0
   fi
   local existing_dir
-  existing_dir="$(docker inspect "${existing_container}" \
-    --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}')"
+  existing_dir="$(container_workspace_dir "${existing_container}")"
   if [[ -n "${existing_dir}" && "${existing_dir}" != "${project_dir}" ]]; then
     echo "error: an instance named '${project_name#sandbox-}' is already running for a different project directory (${existing_dir})" >&2
     echo "Tear it down first with 'bin/sandbox down --name ${project_name#sandbox-}', or choose a different --name." >&2
@@ -504,6 +514,57 @@ cmd_down() {
   compose "${project_name}" down
 }
 
+# One line of `list`'s output for an already-confirmed-running instance.
+# Looks the container up directly by its compose labels rather than via
+# `compose ps` (unlike check_name_not_in_use_by_other_dir/cmd_down): `list` is
+# read-only and has no project directory of its own to export as PROJECT_DIR,
+# and docker-compose.yml's `${PROJECT_DIR}:/workspace` has no default, so a
+# `compose` call here would need PROJECT_DIR exported per *instance* just to
+# satisfy validation, for a value `list` doesn't otherwise need at all.
+list_row() {
+  local project_name="$1"
+  local container_id
+  container_id="$(docker ps -q \
+    --filter "label=com.docker.compose.project=${project_name}" \
+    --filter "label=com.docker.compose.service=sandbox")"
+  if [[ -z "${container_id}" ]]; then
+    return
+  fi
+
+  local project_dir
+  project_dir="$(container_workspace_dir "${container_id}")"
+
+  # Best-effort: an instance mid-`up` (container running, code-server port not
+  # published yet) still deserves a row rather than making the whole `list`
+  # command fail.
+  local code_server_addr
+  code_server_addr="$(docker port "${container_id}" 8080 2>/dev/null || true)"
+
+  printf '%-30s %-45s %s\n' \
+    "${project_name#sandbox-}" "${project_dir:-?}" "${code_server_addr:-(not ready)}"
+}
+
+cmd_list() {
+  if [[ $# -gt 0 ]]; then
+    echo "error: 'list' does not take any arguments" >&2
+    usage >&2
+    exit 1
+  fi
+
+  local names
+  names="$(running_sandbox_project_names)"
+  if [[ -z "${names}" ]]; then
+    echo "No sandbox instances are running."
+    return 0
+  fi
+
+  printf '%-30s %-45s %s\n' "NAME" "PROJECT DIR" "CODE-SERVER"
+  local project_name
+  while IFS= read -r project_name; do
+    list_row "${project_name}"
+  done <<<"${names}"
+}
+
 main() {
   local sub="${1:-}"
   case "${sub}" in
@@ -514,6 +575,10 @@ main() {
     down)
       shift
       cmd_down "$@"
+      ;;
+    list)
+      shift
+      cmd_list "$@"
       ;;
     -h | --help | "")
       usage
