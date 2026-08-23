@@ -54,3 +54,13 @@ ticket 05のコメントに記録済みの制約と同じで、このセッシ�
 
 - `test/multi_instance_isolation.bats`を含む全E2Eスイートの実ビルド経由での実行が未完了。ビルド可能な環境（実機のWSL2/macOS）でのフォローアップが必要（ticket 01/02/05と同種の既知の制約）。
 - Docker Desktop（macOS/Windows）・WSL2/Linux-native Dockerでの実機検証は未実施。
+
+### ticket 07セッションでの追加修正（`/code-review`で検出、フォローアップ）
+
+ticket 07（キャッシュボリューム永続化）の実装セッションで`/code-review`を走らせた際、ticket 07の差分とは無関係な、この時点で既にコミット済みだった`--name`関連の既存バグ3件が検出された。ユーザーに確認の上、同セッションで（別コミットとして）修正した:
+
+- **`check_name_not_in_use_by_other_dir`が恒常的にno-op化していた（Critical）**: `cmd_up`内でこのガードが`export PROJECT_DIR=...`より前に呼ばれていた。ガード内の`compose "${project_name}" ps -q sandbox 2>/dev/null || true`は、`docker-compose.yml`の`${PROJECT_DIR}:/workspace`（デフォルト値なし）が未設定の`PROJECT_DIR`により`invalid spec: :/workspace: empty section between colons`で失敗するが、その失敗が`2>/dev/null || true`で握りつぶされ、`existing_container`が常に空文字列になっていた。結果、本チケットのコメントで「修正した」と記録していた"サイレントな乗っ取り"（`up <dirB> --name shared`が稼働中の`up <dirA> --name shared`を無言で上書きする）が実質的に再発していた。`export PROJECT_DIR`をガード呼び出しより前に移動し、念のため`check_name_not_in_use_by_other_dir`の冒頭に`PROJECT_DIR`未設定時に即エラー終了するガードも追加した。
+- **新規`--name`同士のcheck-then-actレース（High）**: 既存の衝突ガードは「既に起動済みの`--name`と別ディレクトリで衝突していないか」しか見ておらず、2つの`up --name shared`が"どちらもまだ未起動"の状態で競合した場合は両方ガードを通過し、後勝ちで`compose up -d --build`がもう一方のコンテナを上書きしうる状態だった。`mkdir`のアトミック性を使った`acquire_name_lock`を追加し、`--name`が指定されたときはガードの直前でロックを取得、スクリプトの`EXIT`（`up`が成功/失敗いずれで終わっても）でロックを解放するようにした。これによりガードから`compose up -d --build`完了までの区間全体が同名`--name`に対して直列化される。
+- **`down`が対象不在でもexit 0で成功していた（Medium）**: `bin/sandbox down --name <実在しない名前>`や、実体は`--name`で起動されたインスタンスを`down <project-dir>`で叩いた場合など、対象のcompose projectが実在しなくても`docker compose ... down`自体はexit 0で成功してしまい、呼び出し側が「本当に破棄できたか」を終了コードから判断できなかった。`compose "${project_name}" down`の直前に`sandbox`サービスのコンテナが実在するかを確認し、いなければエラー終了するチェックを追加した。
+
+いずれも`bash -n`・`shellcheck`はクリーン。このセッションの環境制約（`sandbox/Dockerfile`のビルドがbuildkit・legacy builderいずれでも失敗する）は変わらず解消していないため、`test/multi_instance_isolation.bats`を含む実ビルド経由でのE2E検証は今回も未実施。関数単位（`acquire_name_lock`・`dind_cache_volume_in_use_by_other_project`）の切り出し実行と、`bin/sandbox down --name <未起動>`を実際に呼んでエラー終了することは確認した。

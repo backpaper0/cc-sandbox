@@ -136,6 +136,16 @@ check_name_not_in_use_by_other_dir() {
   local project_name="$1"
   local project_dir="$2"
   local existing_container
+  # Requires PROJECT_DIR to already be exported: docker-compose.yml's
+  # `${PROJECT_DIR}:/workspace` has no `:-` default, so without it `compose ps`
+  # fails validation outright (rather than reporting "no container") and that
+  # failure is swallowed by `|| true` below -- silently turning this whole guard
+  # into a no-op. (Found in review: this used to run before cmd_up exported
+  # PROJECT_DIR.)
+  if [[ -z "${PROJECT_DIR:-}" ]]; then
+    echo "error: internal: check_name_not_in_use_by_other_dir called before PROJECT_DIR was exported" >&2
+    exit 1
+  fi
   existing_container="$(compose "${project_name}" ps -q sandbox 2>/dev/null || true)"
   if [[ -z "${existing_container}" ]]; then
     return 0
@@ -148,6 +158,34 @@ check_name_not_in_use_by_other_dir() {
     echo "Tear it down first with 'bin/sandbox down --name ${project_name#sandbox-}', or choose a different --name." >&2
     exit 1
   fi
+}
+
+# Serializes check_name_not_in_use_by_other_dir's check-then-act sequence (and the
+# `compose up` that follows it) against another concurrent `up --name` claiming the
+# *same* brand-new name: without this, two `up --name shared` invocations racing
+# against each other can both see "not in use yet" before either has created a
+# container, both pass the guard, and the second `compose up -d --build` silently
+# recreates/clobbers the first's container (found in review). `mkdir` is atomic on
+# POSIX filesystems, unlike a check-then-create on a plain file, so only one
+# concurrent invocation can hold this lock for a given project name at a time. The
+# trap releases it on the *script's* exit (success or failure), which is also when
+# `up` has either finished creating the container or given up -- i.e. for exactly
+# as long as the race window is open.
+acquire_name_lock() {
+  local project_name="$1"
+  local lock_dir="${TMPDIR:-/tmp}/sandbox-lock-${project_name}"
+  local waited=0
+  while ! mkdir "${lock_dir}" 2>/dev/null; do
+    sleep 0.2
+    waited=$((waited + 1))
+    if [[ "${waited}" -gt 150 ]]; then
+      echo "error: timed out waiting for another 'bin/sandbox up --name ${project_name#sandbox-}' to finish" >&2
+      exit 1
+    fi
+  done
+  # lock_dir must expand now, not when the trap fires.
+  # shellcheck disable=SC2064
+  trap "rmdir '${lock_dir}' 2>/dev/null || true" EXIT
 }
 
 # Applies the isolation rules from inside the container, as root
@@ -262,9 +300,16 @@ cmd_up() {
   fi
 
   project_dir="$(cd "${project_dir}" && pwd -P)"
+  # Exported before any `compose` call below (including inside
+  # check_name_not_in_use_by_other_dir), since docker-compose.yml's
+  # `${PROJECT_DIR}:/workspace` has no default and compose validates it while
+  # loading the file even for a plain `ps`.
+  export PROJECT_DIR="${project_dir}"
+
   local project_name
   if [[ "${name_given}" == true ]]; then
     project_name="$(compose_project_name_for_name "${name}")" || exit 1
+    acquire_name_lock "${project_name}"
     check_name_not_in_use_by_other_dir "${project_name}" "${project_dir}"
   else
     project_name="$(compose_project_name "${project_dir}")"
@@ -412,6 +457,18 @@ cmd_down() {
   # The isolation rules live inside the container, so removing it removes them too.
   export PROJECT_DIR="${resolved_project_dir}"
   export SANDBOX_ENV_FILE="/dev/null"
+
+  # Fails loudly rather than letting `compose down` silently exit 0 against a
+  # project with nothing running (e.g. a typo'd --name, or a <project-dir> whose
+  # instance was actually started with --name and so lives under a different
+  # project name) -- found in review: without this, a caller relying on the exit
+  # code to confirm teardown is misled into thinking the instance it meant to stop
+  # is gone when it's still running.
+  if [[ -z "$(compose "${project_name}" ps -q sandbox 2>/dev/null || true)" ]]; then
+    echo "error: no running sandbox instance found for '${project_name#sandbox-}'" >&2
+    exit 1
+  fi
+
   compose "${project_name}" down
 }
 
