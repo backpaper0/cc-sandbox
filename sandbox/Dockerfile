@@ -69,6 +69,14 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 # through mise's node shim (see docs/adr/0003 for how auth reaches it).
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && mise reshim
 
+# Pre-create the cache directories docker-compose.yml mounts shared volumes onto
+# (ticket 07), owned by dev rather than left for Docker to create on first mount.
+# A named volume copies the target directory's existing ownership/content from the
+# image the first time it's mounted, but only if that directory already exists --
+# otherwise Docker creates the mountpoint as root, and dev (a non-root user) can't
+# write into it.
+RUN mkdir -p "${HOME}/.cache/uv" "${HOME}/.npm" "${HOME}/.m2" "${HOME}/.cache/ms-playwright"
+
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/sandbox-entrypoint"]
 CMD ["sleep", "infinity"]

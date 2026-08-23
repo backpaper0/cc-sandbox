@@ -28,6 +28,16 @@ services:
       - "127.0.0.1::8080"
     volumes:
       - ${PROJECT_DIR}:/workspace
+      # Shared tool caches (ticket 07): named with an explicit `name:` below rather
+      # than left to compose's default `<project>_<key>` scheme, so every sandbox
+      # instance -- regardless of its own -p project name -- mounts the exact same
+      # volumes and benefits from work already done by other instances. `down`
+      # (bin/sandbox never passes -v) leaves them in place.
+      - sandbox-cache-mise:/home/dev/.local/share/mise
+      - sandbox-cache-uv:/home/dev/.cache/uv
+      - sandbox-cache-npm:/home/dev/.npm
+      - sandbox-cache-m2:/home/dev/.m2
+      - sandbox-cache-playwright:/home/dev/.cache/ms-playwright
     working_dir: /workspace
     command: ["sleep", "infinity"]
 
@@ -57,3 +67,33 @@ services:
     volumes:
       - ./isolate-forward.sh:/usr/local/sbin/sandbox-isolate-forward:ro
       - ./blocked-ranges.sh:/usr/local/sbin/sandbox-blocked-ranges:ro
+      # Docker image-layer cache (ticket 07), with a per-instance fallback: sharing
+      # this directory between two *concurrently running* dind sidecars doesn't
+      # work -- dockerd's containerd metadata store takes an exclusive lock on its
+      # data-root, so a second dind pointed at an already-in-use copy of this volume
+      # just hangs on startup instead of coming up (found in review; verified
+      # directly against two real docker:28-dind containers). So bin/sandbox only
+      # points DIND_CACHE_VOLUME at the globally-shared sandbox-cache-docker-layers
+      # volume when no other running instance currently holds it (see
+      # dind_cache_volume_in_use_by_other_project in bin/sandbox); otherwise it
+      # falls back to a volume scoped to this instance's project name, which is
+      # still a real named volume (persists across *this* instance's own down/up)
+      # rather than an ephemeral one. `dind-cache` below is a fixed compose-local
+      # alias -- compose doesn't support variable interpolation in top-level
+      # `volumes:` keys -- whose *actual* underlying Docker volume name comes from
+      # its `name:` value instead, which does interpolate.
+      - dind-cache:/var/lib/docker
+
+volumes:
+  sandbox-cache-mise:
+    name: sandbox-cache-mise
+  sandbox-cache-uv:
+    name: sandbox-cache-uv
+  sandbox-cache-npm:
+    name: sandbox-cache-npm
+  sandbox-cache-m2:
+    name: sandbox-cache-m2
+  sandbox-cache-playwright:
+    name: sandbox-cache-playwright
+  dind-cache:
+    name: ${DIND_CACHE_VOLUME:-sandbox-cache-docker-layers}

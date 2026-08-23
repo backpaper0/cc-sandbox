@@ -39,11 +39,25 @@ container_ip_of() {
 
 # The DinD sidecar (ticket 05) shares the sandbox container's compose project, so
 # it's found the same way: by that project label, filtered down to the `dind`
-# service.
+# service. Takes an optional project dir, same as container_id(), so
+# test/cache_volume_persistence.bats can look up more than one instance's sidecar.
 dind_container_id() {
+  local dir="${1:-${PROJECT_DIR}}"
   local project
-  project="$(docker inspect "$(container_id)" --format '{{ index .Config.Labels "com.docker.compose.project" }}')"
+  project="$(docker inspect "$(container_id "${dir}")" --format '{{ index .Config.Labels "com.docker.compose.project" }}')"
   docker ps -q --filter "label=com.docker.compose.project=${project}" --filter "label=com.docker.compose.service=dind"
+}
+
+# The name of the Docker named volume mounted at the given destination in the
+# given container, or empty if that destination isn't a named-volume mount (e.g.
+# it's a bind mount, or nothing is mounted there). Used by
+# test/cache_volume_persistence.bats to confirm two sandbox instances share the
+# exact same cache volume rather than each getting its own project-scoped one.
+volume_name_at() {
+  local container="$1"
+  local destination="$2"
+  docker inspect "${container}" \
+    --format "{{range .Mounts}}{{if eq .Destination \"${destination}\"}}{{.Name}}{{end}}{{end}}"
 }
 
 # The bridge gateway of a given container's (single) network -- the host-side

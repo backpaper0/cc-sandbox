@@ -241,6 +241,27 @@ wait_for_code_server() {
   wait_until "$1" curl -sS -m 2 -o /dev/null http://127.0.0.1:8080/
 }
 
+# True if some *other* already-running instance's dind sidecar currently has the
+# globally-shared Docker image-layer cache volume mounted. containerd's metadata
+# store inside that volume takes an exclusive lock on dockerd startup, so a second
+# dind sharing it concurrently would hang rather than start (see
+# sandbox/docker-compose.yml's DIND_CACHE_VOLUME comment; verified directly in
+# review against two real docker:28-dind containers). Excludes the given project's
+# own containers so re-running `up` on an already-running instance doesn't flip its
+# own cache from shared to per-instance on every call.
+dind_cache_volume_in_use_by_other_project() {
+  local volume_name="$1"
+  local own_project_name="$2"
+  local cid other_project
+  for cid in $(docker ps -q --filter "volume=${volume_name}"); do
+    other_project="$(docker inspect "${cid}" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+    if [[ -n "${other_project}" && "${other_project}" != "${own_project_name}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 cmd_up() {
   local project_dir=""
   local profile=""
@@ -320,9 +341,17 @@ cmd_up() {
   if [[ "${profile_given}" == true ]]; then
     env_file="$(resolve_profile_env_file "${profile}")"
   fi
-
-  export PROJECT_DIR="${project_dir}"
   export SANDBOX_ENV_FILE="${env_file}"
+
+  # ticket 07: use the globally-shared Docker image-layer cache volume unless
+  # another already-running instance currently holds it (see
+  # dind_cache_volume_in_use_by_other_project and docker-compose.yml's
+  # DIND_CACHE_VOLUME comment for why sharing it concurrently doesn't work).
+  local dind_cache_volume="sandbox-cache-docker-layers"
+  if dind_cache_volume_in_use_by_other_project "${dind_cache_volume}" "${project_name}"; then
+    dind_cache_volume="sandbox-cache-docker-layers-${project_name}"
+  fi
+  export DIND_CACHE_VOLUME="${dind_cache_volume}"
 
   compose "${project_name}" up -d --build
 
@@ -378,6 +407,9 @@ cmd_up() {
   echo "  Enter with:   docker exec -it -u dev ${container_id} bash"
   echo "  code-server:  http://${code_server_addr}"
   echo "  Password:     docker exec -u dev ${container_id} grep '^password:' /home/${SANDBOX_USER}/.config/code-server/config.yaml"
+  if [[ "${dind_cache_volume}" != "sandbox-cache-docker-layers" ]]; then
+    echo "  Docker image-layer cache: instance-scoped (another running instance already holds the shared cache)"
+  fi
 }
 
 running_sandbox_project_names() {
