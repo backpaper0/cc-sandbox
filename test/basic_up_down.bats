@@ -60,9 +60,17 @@ exec_in() {
 @test "container's initial process runs as a non-root user" {
   run docker top "$(container_id)"
   [ "$status" -eq 0 ]
+  # docker top resolves the uid against the *daemon host's* passwd db, not the
+  # container's, so the owner column reads "dev" on some hosts and the bare uid
+  # on others. Only the non-rootness of it is portable.
   owner="$(awk 'NR==2{print $1}' <<<"$output")"
   [ "$owner" != "root" ]
-  [ "$owner" = "dev" ]
+  [ "$owner" != "0" ]
+
+  # Pin the identity itself to what the image declares, which every host agrees on.
+  run docker inspect "$(container_id)" --format '{{.Config.User}}'
+  [ "$status" -eq 0 ]
+  [ "$output" = "dev" ]
 }
 
 @test "dev user has passwordless sudo" {

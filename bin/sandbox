@@ -72,8 +72,12 @@ running_sandbox_project_names() {
 
 cmd_down() {
   local project_name
+  # `down` only removes resources, so it never materializes the bind mount -- but
+  # compose still validates the volume spec while loading the file, and an empty
+  # PROJECT_DIR turns that spec into ":/workspace", which compose rejects. Keep a
+  # valid absolute path for the no-argument form, where the dir isn't known.
+  local project_dir="/nonexistent"
   if [[ $# -ge 1 ]]; then
-    local project_dir
     project_dir="$(cd "$1" && pwd)"
     project_name="$(compose_project_name "${project_dir}")"
   else
@@ -92,7 +96,7 @@ cmd_down() {
     project_name="${names}"
   fi
 
-  PROJECT_DIR="" compose "${project_name}" down
+  PROJECT_DIR="${project_dir}" compose "${project_name}" down
 }
 
 main() {

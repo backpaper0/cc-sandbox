@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** in-review
+**Status:** done
 
-- [ ] `bin/sandbox up <project-dir>` がコンテナを起動し、mise, uv, Python, Java, Node.js, Vim がPATH上で使える
-- [ ] 指定したプロジェクトディレクトリが本体コンテナにbind mountされ、中からファイルの読み書きができる
-- [ ] コンテナの初期プロセスは非rootユーザーとして起動する
-- [ ] その非rootユーザーはパスワードなしで`sudo`が使える
-- [ ] `bin/sandbox down` でコンテナおよび関連するcomposeリソースが破棄される
+- [x] `bin/sandbox up <project-dir>` がコンテナを起動し、mise, uv, Python, Java, Node.js, Vim がPATH上で使える
+- [x] 指定したプロジェクトディレクトリが本体コンテナにbind mountされ、中からファイルの読み書きができる
+- [x] コンテナの初期プロセスは非rootユーザーとして起動する
+- [x] その非rootユーザーはパスワードなしで`sudo`が使える
+- [x] `bin/sandbox down` でコンテナおよび関連するcomposeリソースが破棄される
 
 ## Comments
 
@@ -25,3 +25,18 @@
 `/code-review`で2件の実バグを検出、修正済み:
 - `bin/sandbox`の`slugify()`がbasenameのみからslugを作っていたため、パスの異なる同名ディレクトリ（例: `~/work/backend`と`~/side/backend`）でcompose project名が衝突し、`up`が既存の別インスタンスを誤って再構成/破棄しうる欠陥があった。絶対パスのsha256先頭8文字をslugに含める方式に変更し、衝突を解消（軽量コンテナで手動検証済み: 異なるパスで異なるslug、同一パスでは安定して同一slugを生成することを確認）。
 - `test/basic_up_down.bats`がCLIのslug生成ロジックを独自に再実装しており、`mktemp -d`が生成するパス中の`.`の扱いが`bin/sandbox`の実装とズレて全アサーションが偽陽性/偽陰性になりうる欠陥があった。プロジェクトディレクトリのbind mount先(`/workspace`)を`docker inspect`で照合してコンテナを特定する方式に変更し、CLI内部のslug方式と無関係に外部観測可能な事実だけで検証するようにした（軽量コンテナで手動検証済み: 複数のsandbox風コンテナが同時に存在する状況でも正しい方を選択できること、一致なしでは空を返すことを確認）。
+
+### 実機検証（フォローアップ完了）
+
+上記の未完了フォローアップ（実際のターゲット環境での`test/basic_up_down.bats`のgreen化）を実施し、**6/6 green**を確認した。
+
+検証環境: macOS (Darwin 25.5.0, arm64) / OrbStack上のDocker Engine 29.4.0 / Docker Compose v5.1.2 / storage driver `overlay2` / bats-core 1.14.0。前セッションで踏んだbtrfs+overlay2のEXDEV問題はこの環境では再現しなかった（想定どおり環境固有の問題だった）。
+
+一方で、環境固有ではない**実バグが2件**見つかり、修正した:
+
+- **イメージがビルドできなかった**: `ubuntu:24.04`はuid/gid 1000の`ubuntu`アカウントを標準で同梱している（22.04以前には無く、24.04で入った変更）。そのため`groupadd --gid 1000 dev`が`GID '1000' already exists`で落ち、イメージビルド自体が通らず全6テストがredだった。`USER_UID`/`USER_GID`を占有している既存アカウントを`getent`で引いて`userdel -r`/`groupdel`してから作成するように`sandbox/Dockerfile`を修正（`ubuntu`決め打ちではなくidベースにしたので、ARGで任意のuid/gidを渡した場合にも効く）。
+- **`down`が常に失敗していた**: `cmd_down`が`PROJECT_DIR=""`でcomposeを呼んでおり、compose定義の`${PROJECT_DIR}:/workspace`が`:/workspace`という不正なvolume specになって`invalid spec: :/workspace: empty section between colons`で落ちていた。`down`はリソース削除しかせずbind mountを実体化しないが、composeはファイル読み込み時にspecを検証するため通らない。project dirが判明している場合はそれを、引数なし形式では有効な絶対パスのプレースホルダ(`/nonexistent`)を渡すように修正した。なお`-f`を外せばラベル経由で`down`できることも確認したが、`bin/sandbox down`はユーザーのプロジェクトディレクトリで実行されることが多く、そこに別の`docker-compose.yml`があると誤ってそれを読み込むため、`-f`は維持する方針とした。
+
+テストにも1件、環境依存のアサーションがあったので修正した: `docker top`のUSER列はdaemonホスト側のpasswd DBでuidを解決するため、コンテナ内の`dev`という名前はホストによっては解決されず素の`1000`が出る（OrbStackのLinux VM上で実際にそうなった）。「非rootであること」だけをこの列で判定し、dev本人であることの確認は全ホストで一致する`docker inspect --format '{{.Config.User}}'`に移した。
+
+E2Eテストが覆っていない経路も手動で確認済み: 引数なし`down`（単一インスタンス時に正しく破棄）、稼働ゼロ時の`down`（エラー終了）、複数稼働時の`down`（project dir指定を促してエラー終了）。`bin/sandbox`は`shellcheck`クリーン。

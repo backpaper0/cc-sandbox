@@ -15,7 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
+# ubuntu:24.04 ships a stock "ubuntu" account at uid/gid 1000, which collides
+# with the dev user below whenever USER_UID/USER_GID point at an occupied id.
+RUN existing_user="$(getent passwd "${USER_UID}" | cut -d: -f1)" \
+    && if [ -n "${existing_user}" ]; then userdel -r "${existing_user}"; fi \
+    && existing_group="$(getent group "${USER_GID}" | cut -d: -f1)" \
+    && if [ -n "${existing_group}" ]; then groupdel "${existing_group}"; fi \
+    && groupadd --gid "${USER_GID}" "${USERNAME}" \
     && useradd --uid "${USER_UID}" --gid "${USER_GID}" --create-home --shell /bin/bash "${USERNAME}" \
     && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" \
     && chmod 0440 "/etc/sudoers.d/${USERNAME}"
