@@ -24,6 +24,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY isolate.sh /usr/local/sbin/sandbox-isolate
 RUN chmod 0755 /usr/local/sbin/sandbox-isolate
 
+# Downloaded to a file rather than piped straight into sh: /bin/sh here is dash,
+# which has no pipefail, so a failed curl (e.g. a network blip) would otherwise
+# hand sh an empty stdin and exit 0, silently producing an image with no
+# code-server binary installed at all.
+RUN curl -fsSL https://code-server.dev/install.sh -o /tmp/install-code-server.sh \
+    && sh /tmp/install-code-server.sh \
+    && rm /tmp/install-code-server.sh
+
+COPY entrypoint.sh /usr/local/bin/sandbox-entrypoint
+RUN chmod 0755 /usr/local/bin/sandbox-entrypoint
+
 # ubuntu:24.04 ships a stock "ubuntu" account at uid/gid 1000, which collides
 # with the dev user below whenever USER_UID/USER_GID point at an occupied id.
 RUN existing_user="$(getent passwd "${USER_UID}" | cut -d: -f1)" \
@@ -54,4 +65,5 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && mise reshim
 
 WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/sandbox-entrypoint"]
 CMD ["sleep", "infinity"]

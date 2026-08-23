@@ -12,6 +12,12 @@ services:
     # (e.g. for manual validation) without going through bin/sandbox.
     env_file:
       - ${SANDBOX_ENV_FILE:-/dev/null}
+    # code-server (ticket 04): loopback-only + random host port, per the spec's
+    # per-instance port isolation. The container-side bind stays 0.0.0.0 (see
+    # entrypoint.sh); this publish line is what actually restricts reachability
+    # to processes on this host.
+    ports:
+      - "127.0.0.1::8080"
     volumes:
       - ${PROJECT_DIR}:/workspace
     working_dir: /workspace

@@ -90,6 +90,22 @@ apply_network_isolation() {
   docker exec -u root "${container_id}" /usr/local/sbin/sandbox-isolate "${SANDBOX_USER}"
 }
 
+# code-server (a Node process) takes a moment to start listening after the
+# container itself is running. Poll instead of assuming it's ready, so `up`
+# doesn't report a URL that isn't actually serving anything yet.
+wait_for_code_server() {
+  local container_id="$1"
+  local _
+  for _ in $(seq 1 30); do
+    if docker exec -u "${SANDBOX_USER}" "${container_id}" \
+        curl -sS -m 2 -o /dev/null http://127.0.0.1:8080/ 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 cmd_up() {
   local project_dir=""
   local profile=""
@@ -158,10 +174,27 @@ cmd_up() {
     exit 1
   fi
 
+  # Fail closed here too: a sandbox reported as "up" whose code-server URL/password
+  # don't actually work is the same confusing failure mode isolation guards against.
+  if ! wait_for_code_server "${container_id}"; then
+    echo "error: code-server did not become ready in '${project_name}'; tearing down" >&2
+    compose "${project_name}" down >/dev/null 2>&1 || true
+    exit 1
+  fi
+
+  local code_server_addr
+  if ! code_server_addr="$(compose "${project_name}" port sandbox 8080)"; then
+    echo "error: failed to resolve code-server's published port for '${project_name}'; tearing down" >&2
+    compose "${project_name}" down >/dev/null 2>&1 || true
+    exit 1
+  fi
+
   echo
   echo "Sandbox '${project_name}' is up."
-  echo "  Project dir: ${project_dir} -> /workspace"
-  echo "  Enter with:  docker exec -it -u dev ${container_id} bash"
+  echo "  Project dir:  ${project_dir} -> /workspace"
+  echo "  Enter with:   docker exec -it -u dev ${container_id} bash"
+  echo "  code-server:  http://${code_server_addr}"
+  echo "  Password:     docker exec -u dev ${container_id} grep '^password:' /home/${SANDBOX_USER}/.config/code-server/config.yaml"
 }
 
 running_sandbox_project_names() {
