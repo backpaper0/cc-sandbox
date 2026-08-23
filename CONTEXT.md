@@ -20,6 +20,10 @@ _Avoid_: セッション, ワークスペース
 サンドボックスインスタンスの中心となるコンテナ。Claude Code・開発ツール一式・code-serverが動き、非rootユーザーを起点にsudoが無制限で使える。
 _Avoid_: メインコンテナ, アプリコンテナ
 
+**claudeラッパー**:
+本体コンテナ内で `claude` という名前で PATH 上の実バイナリより手前に置かれる薄いラッパースクリプト。引数なしの素のセッション起動には `--dangerously-skip-permissions --permission-mode bypassPermissions` を自動付与し、既知のトップレベルサブコマンド呼び出しや、ユーザーが権限系フラグを明示した呼び出しには何も足さずそのまま実バイナリへ渡す。
+_Avoid_: alias, シェル関数（PATHシャドーイング方式を採用したため、この2つとは区別する）
+
 **DinDサイドカー**:
 本体コンテナに併走する特権コンテナで、ネストしたDocker daemonを提供する。Testcontainersや、開発者が手動で起動するPostgreSQL/Redis等のサービスコンテナはここで動く。本体コンテナと同じネットワーク隔離ルールの内側に置かれる。
 _Avoid_: ネストDocker, Docker-in-Docker（説明文中ではこの一般名称を使ってよいが、用語としてはDinDサイドカーに統一する）

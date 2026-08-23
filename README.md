@@ -74,8 +74,10 @@ Sandbox 'sandbox-my-project-1a2b3c4d' is up.
 
 ```sh
 docker exec -it -u dev <container-id> bash
-claude --dangerously-skip-permissions
+claude
 ```
+
+サンドボックス内の `claude` は素のセッション起動（引数なし・プロンプト・`-p` 等）に対して自動で `--dangerously-skip-permissions --permission-mode bypassPermissions` を付与します。`claude mcp` 等のサブコマンドや、自分で権限系フラグを指定した呼び出しはそのまま素通しされます。
 
 隔離ルールの適用や DinD・code-server の起動に失敗した場合、`up` は中途半端な状態を残さず自動でインスタンスを破棄して異常終了します（隔離なしで立ち上がったサンドボックスはサンドボックスではないため）。
 
@@ -118,7 +120,7 @@ bin/sandbox down                     # 動いているインスタンスが1つ�
 
 | ツール | 備考 |
 | :--- | :--- |
-| Claude Code | バージョン固定でグローバルインストール |
+| Claude Code | バージョン固定でグローバルインストール。`claude` コマンドは bypass permissions を自動付与するラッパー経由（[使い方](#使い方)参照） |
 | mise | Python 3.12 / Node.js 22 / Java (temurin-21) をグローバル設定 |
 | uv | Python パッケージマネージャ |
 | Playwright + Playwright MCP | ユーザースコープの MCP サーバーとして登録済み、Chromium 同梱 |

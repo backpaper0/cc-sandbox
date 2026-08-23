@@ -79,6 +79,13 @@ RUN npm install -g \
       playwright-mcp --headless --browser chromium --no-sandbox \
       --output-dir /tmp/playwright-mcp-output
 
+# Installed after the `claude mcp add` step above, which needs the real
+# binary: PATH already resolves `claude` through this file's target
+# directory (${HOME}/.local/bin, see the ENV PATH line above), so an earlier
+# COPY would shadow it during the build too. See CONTEXT.md's "claudeラッパー".
+COPY --chown=${USERNAME}:${USERNAME} claude-wrapper.sh "${HOME}/.local/bin/claude"
+RUN chmod 0755 "${HOME}/.local/bin/claude"
+
 # Install Chromium's OS libraries into the image and seed the browser cache.
 # bin/sandbox repeats the browser install after applying network isolation as a
 # cheap no-op, so an already-created ticket-07 cache volume that predates this
