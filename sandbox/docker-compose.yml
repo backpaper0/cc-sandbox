@@ -1,0 +1,8 @@
+services:
+  sandbox:
+    build: .
+    init: true
+    volumes:
+      - ${PROJECT_DIR}:/workspace
+    working_dir: /workspace
+    command: ["sleep", "infinity"]

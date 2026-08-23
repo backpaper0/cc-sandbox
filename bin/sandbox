@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# CLI entrypoint for the isolated dev sandbox (see .scratch/isolated-dev-sandbox/spec.md).
+set -euo pipefail
+
+SANDBOX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="${SANDBOX_ROOT}/sandbox/docker-compose.yml"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/sandbox up <project-dir>
+  bin/sandbox down [project-dir]
+
+  up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
+  down  Tear down the sandbox instance. If <project-dir> is omitted, the single
+        running instance (if there is exactly one) is torn down.
+EOF
+}
+
+slugify() {
+  # $1 must already be a canonicalized absolute path (see compose_project_name
+  # callers), so the hash suffix uniquely ties the slug to that exact directory
+  # and two different paths sharing a basename (e.g. two "backend" checkouts)
+  # don't collide on the same compose project name.
+  local input="$1"
+  local base
+  base="$(basename "${input}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+  base="${base#-}"
+  base="${base%-}"
+  local hash
+  hash="$(printf '%s' "${input}" | sha256sum | cut -c1-8)"
+  echo "${base:-sandbox}-${hash}"
+}
+
+compose_project_name() {
+  echo "sandbox-$(slugify "$1")"
+}
+
+compose() {
+  local project_name="$1"
+  shift
+  docker compose -p "${project_name}" -f "${COMPOSE_FILE}" "$@"
+}
+
+cmd_up() {
+  if [[ $# -lt 1 ]]; then
+    echo "error: 'up' requires a project directory" >&2
+    usage >&2
+    exit 1
+  fi
+
+  local project_dir
+  project_dir="$(cd "$1" && pwd)"
+  local project_name
+  project_name="$(compose_project_name "${project_dir}")"
+
+  PROJECT_DIR="${project_dir}" compose "${project_name}" up -d --build
+
+  local container_id
+  container_id="$(PROJECT_DIR="${project_dir}" compose "${project_name}" ps -q sandbox)"
+
+  echo
+  echo "Sandbox '${project_name}' is up."
+  echo "  Project dir: ${project_dir} -> /workspace"
+  echo "  Enter with:  docker exec -it -u dev ${container_id} bash"
+}
+
+running_sandbox_project_names() {
+  docker ps --filter 'label=com.docker.compose.project' --format '{{.Label "com.docker.compose.project"}}' \
+    | sort -u | grep '^sandbox-' || true
+}
+
+cmd_down() {
+  local project_name
+  if [[ $# -ge 1 ]]; then
+    local project_dir
+    project_dir="$(cd "$1" && pwd)"
+    project_name="$(compose_project_name "${project_dir}")"
+  else
+    local names
+    names="$(running_sandbox_project_names)"
+    local count
+    count="$(grep -c . <<<"${names}" || true)"
+    if [[ -z "${names}" || "${count}" -eq 0 ]]; then
+      echo "error: no running sandbox instances found" >&2
+      exit 1
+    elif [[ "${count}" -gt 1 ]]; then
+      echo "error: multiple sandbox instances running, specify a project directory:" >&2
+      echo "${names}" >&2
+      exit 1
+    fi
+    project_name="${names}"
+  fi
+
+  PROJECT_DIR="" compose "${project_name}" down
+}
+
+main() {
+  local sub="${1:-}"
+  case "${sub}" in
+    up)
+      shift
+      cmd_up "$@"
+      ;;
+    down)
+      shift
+      cmd_down "$@"
+      ;;
+    -h | --help | "")
+      usage
+      ;;
+    *)
+      echo "error: unknown subcommand '${sub}'" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
