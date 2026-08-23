@@ -12,14 +12,18 @@ SANDBOX_USER=dev
 usage() {
   cat <<'EOF'
 Usage:
-  bin/sandbox up <project-dir> [--profile <private|work>]
-  bin/sandbox down [project-dir]
+  bin/sandbox up <project-dir> [--profile <private|work>] [--name <slug>]
+  bin/sandbox down [project-dir] [--name <slug>]
 
   up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
         --profile loads ~/.sandbox/env.<profile> (see docs/adr/0003) and injects its
         variables into the container so Claude Code is authenticated without an
         interactive login.
-  down  Tear down the sandbox instance. If <project-dir> is omitted, the single
+        --name gives the instance an explicit slug, so multiple instances (e.g. of
+        the same or different project dirs) can run side by side (see ticket 06).
+        Without --name, the instance is named after <project-dir> as before.
+  down  Tear down a sandbox instance, identified by <project-dir> or by --name
+        (whichever the matching 'up' used). If neither is given, the single
         running instance (if there is exactly one) is torn down.
 EOF
 }
@@ -56,6 +60,12 @@ resolve_profile_env_file() {
   echo "${path}"
 }
 
+# Shared by slugify() and sanitize_name() below, so the charset a compose project
+# name is allowed to contain lives in exactly one place.
+to_dash_charset() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-'
+}
+
 slugify() {
   # $1 must already be a canonicalized absolute path (see compose_project_name
   # callers), so the hash suffix uniquely ties the slug to that exact directory
@@ -63,7 +73,7 @@ slugify() {
   # don't collide on the same compose project name.
   local input="$1"
   local base
-  base="$(basename "${input}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+  base="$(to_dash_charset "$(basename "${input}")")"
   base="${base#-}"
   base="${base%-}"
   local hash
@@ -75,10 +85,69 @@ compose_project_name() {
   echo "sandbox-$(slugify "$1")"
 }
 
+# Sanitizes a user-supplied --name into the same charset slugify() produces, but
+# without slugify's path-hash suffix: an explicit --name is already unique by the
+# user's choice (that's the point of ticket 06 -- decoupling the instance identity
+# from the project directory), so no collision-avoidance suffix is needed.
+# `return 1` (not `exit`) on an empty result: called via command substitution
+# below, and a plain `set -e` does not treat a failed command substitution on the
+# right-hand side of an assignment as fatal, so `exit` here would only kill the
+# subshell and silently leave callers with an empty/malformed name. `|| exit 1` at
+# each call site is what actually stops the script.
+sanitize_name() {
+  local input="$1"
+  local out
+  out="$(to_dash_charset "${input}")"
+  # Strip *all* leading/trailing dashes, not just one: unlike slugify()'s
+  # basename handling, there's no hash suffix here to fall back on, so e.g.
+  # "__" must reduce all the way to empty (and get rejected below) rather than
+  # leaving a bare "-" as a project name.
+  out="$(printf '%s' "${out}" | sed -e 's/^-*//' -e 's/-*$//')"
+  if [[ -z "${out}" ]]; then
+    echo "error: --name must contain at least one letter or digit" >&2
+    return 1
+  fi
+  echo "${out}"
+}
+
+compose_project_name_for_name() {
+  local slug
+  slug="$(sanitize_name "$1")" || return 1
+  echo "sandbox-${slug}"
+}
+
 compose() {
   local project_name="$1"
   shift
   docker compose -p "${project_name}" -f "${COMPOSE_FILE}" "$@"
+}
+
+# Fails closed rather than letting `docker compose up` silently redefine an
+# existing instance: without this check, `up <dirB> --name shared` while `up
+# <dirA> --name shared` is still running would make compose recreate the
+# `sandbox` service in place with dirB's bind mount -- i.e. one instance
+# silently clobbers another's container, exactly what --name (ticket 06) is
+# meant to prevent by letting instances be told apart by name instead of only
+# by directory. Only relevant to the --name path: the directory-derived path
+# already ties the project name 1:1 to that directory, so re-running `up`
+# against the same directory is the existing, intentional "keep isolation
+# up to date" behavior (see network_isolation.bats).
+check_name_not_in_use_by_other_dir() {
+  local project_name="$1"
+  local project_dir="$2"
+  local existing_container
+  existing_container="$(compose "${project_name}" ps -q sandbox 2>/dev/null || true)"
+  if [[ -z "${existing_container}" ]]; then
+    return 0
+  fi
+  local existing_dir
+  existing_dir="$(docker inspect "${existing_container}" \
+    --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}')"
+  if [[ -n "${existing_dir}" && "${existing_dir}" != "${project_dir}" ]]; then
+    echo "error: an instance named '${project_name#sandbox-}' is already running for a different project directory (${existing_dir})" >&2
+    echo "Tear it down first with 'bin/sandbox down --name ${project_name#sandbox-}', or choose a different --name." >&2
+    exit 1
+  fi
 }
 
 # Applies the isolation rules from inside the container, as root
@@ -138,6 +207,8 @@ cmd_up() {
   local project_dir=""
   local profile=""
   local profile_given=false
+  local name=""
+  local name_given=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --profile)
@@ -152,6 +223,20 @@ cmd_up() {
       --profile=*)
         profile="${1#--profile=}"
         profile_given=true
+        shift
+        ;;
+      --name)
+        if [[ $# -lt 2 ]]; then
+          echo "error: --name requires an argument" >&2
+          exit 1
+        fi
+        name="$2"
+        name_given=true
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        name_given=true
         shift
         ;;
       -*)
@@ -178,7 +263,12 @@ cmd_up() {
 
   project_dir="$(cd "${project_dir}" && pwd -P)"
   local project_name
-  project_name="$(compose_project_name "${project_dir}")"
+  if [[ "${name_given}" == true ]]; then
+    project_name="$(compose_project_name_for_name "${name}")" || exit 1
+    check_name_not_in_use_by_other_dir "${project_name}" "${project_dir}"
+  else
+    project_name="$(compose_project_name "${project_dir}")"
+  fi
 
   # /dev/null keeps docker-compose.yml's env_file resolvable even without --profile.
   local env_file="/dev/null"
@@ -251,15 +341,58 @@ running_sandbox_project_names() {
 }
 
 cmd_down() {
+  local project_dir=""
+  local name=""
+  local name_given=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name)
+        if [[ $# -lt 2 ]]; then
+          echo "error: --name requires an argument" >&2
+          exit 1
+        fi
+        name="$2"
+        name_given=true
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        name_given=true
+        shift
+        ;;
+      -*)
+        echo "error: unknown option '$1'" >&2
+        usage >&2
+        exit 1
+        ;;
+      *)
+        if [[ -n "${project_dir}" ]]; then
+          echo "error: unexpected argument '$1'" >&2
+          exit 1
+        fi
+        project_dir="$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [[ "${name_given}" == true && -n "${project_dir}" ]]; then
+    echo "error: pass either <project-dir> or --name, not both" >&2
+    exit 1
+  fi
+
   local project_name
   # `down` only removes resources, so it never materializes the bind mount -- but
   # compose still validates the volume spec while loading the file, and an empty
   # PROJECT_DIR turns that spec into ":/workspace", which compose rejects. Keep a
-  # valid absolute path for the no-argument form, where the dir isn't known.
-  local project_dir="/nonexistent"
-  if [[ $# -ge 1 ]]; then
-    project_dir="$(cd "$1" && pwd -P)"
-    project_name="$(compose_project_name "${project_dir}")"
+  # valid absolute path for the --name and no-argument forms, where the dir isn't
+  # known (or, for --name, may belong to a different instance entirely).
+  local resolved_project_dir="/nonexistent"
+  if [[ "${name_given}" == true ]]; then
+    project_name="$(compose_project_name_for_name "${name}")" || exit 1
+  elif [[ -n "${project_dir}" ]]; then
+    resolved_project_dir="$(cd "${project_dir}" && pwd -P)"
+    project_name="$(compose_project_name "${resolved_project_dir}")"
   else
     local names
     names="$(running_sandbox_project_names)"
@@ -269,7 +402,7 @@ cmd_down() {
       echo "error: no running sandbox instances found" >&2
       exit 1
     elif [[ "${count}" -gt 1 ]]; then
-      echo "error: multiple sandbox instances running, specify a project directory:" >&2
+      echo "error: multiple sandbox instances running, specify a project directory or --name:" >&2
       echo "${names}" >&2
       exit 1
     fi
@@ -277,7 +410,7 @@ cmd_down() {
   fi
 
   # The isolation rules live inside the container, so removing it removes them too.
-  export PROJECT_DIR="${project_dir}"
+  export PROJECT_DIR="${resolved_project_dir}"
   export SANDBOX_ENV_FILE="/dev/null"
   compose "${project_name}" down
 }
