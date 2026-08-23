@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import select
+import shlex
 import subprocess
 import sys
 import time
@@ -48,16 +49,26 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
     existing_screenshots = set(glob.glob(os.path.join(output_dir, "*.png")))
 
+    configured = subprocess.run(
+        ["claude", "mcp", "get", "playwright"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    fields = {}
+    for line in configured.splitlines():
+        if line.startswith("  ") and ": " in line:
+            key, value = line.strip().split(": ", 1)
+            fields[key] = value
+    if "Command" not in fields:
+        raise RuntimeError("Claude Code did not report the Playwright MCP command")
+
+    # Launch exactly the user-scope command Claude Code reports. This makes the
+    # behavior check sensitive to drift in the baked-in registration rather than
+    # maintaining an independent copy of its arguments in this fixture.
+    command = [fields["Command"], *shlex.split(fields.get("Args", ""))]
     server = subprocess.Popen(
-        [
-            "playwright-mcp",
-            "--headless",
-            "--browser",
-            "chromium",
-            "--no-sandbox",
-            "--output-dir",
-            output_dir,
-        ],
+        command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
