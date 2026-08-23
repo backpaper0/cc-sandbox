@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Run the complete sandbox acceptance suite against a real Docker daemon.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ "${1:-}" == "--help" ]]; then
+  cat <<'EOF'
+Usage: bin/test-e2e
+
+Run the complete end-to-end suite against a real Linux Docker daemon.
+The tests build images, start privileged DinD containers, and access the
+network, so they intentionally do not support a mocked Docker API.
+EOF
+  exit 0
+fi
+
+if [[ $# -ne 0 ]]; then
+  echo "error: bin/test-e2e takes no arguments" >&2
+  exit 1
+fi
+
+for command in docker bats; do
+  if ! command -v "${command}" >/dev/null 2>&1; then
+    echo "error: required command not found: ${command}" >&2
+    exit 1
+  fi
+done
+
+if ! docker info >/dev/null 2>&1; then
+  echo "error: Docker daemon is not available" >&2
+  exit 1
+fi
+
+docker_os="$(docker info --format '{{.OSType}}')"
+if [[ "${docker_os}" != "linux" ]]; then
+  echo "error: the E2E suite requires a Linux Docker daemon (found: ${docker_os})" >&2
+  exit 1
+fi
+
+echo "Running sandbox E2E suite against Docker $(docker version --format '{{.Server.Version}}')"
+echo "Platform scope: docs/e2e-testing.md"
+
+cd "${REPO_ROOT}"
+exec bats --timing test/*.bats
