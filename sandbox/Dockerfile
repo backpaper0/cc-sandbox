@@ -6,6 +6,7 @@ ARG USER_GID=1000
 # Pinned (rather than @latest) so bumping the version invalidates just this build
 # layer instead of relying on cache misses that never happen.
 ARG CLAUDE_CODE_VERSION=2.1.241
+ARG PLAYWRIGHT_MCP_VERSION=0.0.79
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
@@ -16,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
       unzip \
       xz-utils \
+      util-linux \
       iptables \
       docker.io \
     && rm -rf /var/lib/apt/lists/*
@@ -67,7 +69,19 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 
 # `mise reshim` makes the globally-installed `claude` binary visible on PATH
 # through mise's node shim (see docs/adr/0003 for how auth reaches it).
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && mise reshim
+RUN npm install -g \
+      "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+      "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
+    && mise reshim \
+    && claude mcp add playwright --scope user -- \
+      playwright-mcp --headless --browser chromium --no-sandbox \
+      --output-dir /tmp/playwright-mcp-output
+
+# Install Chromium's OS libraries into the image and seed the browser cache.
+# entrypoint.sh repeats the browser install as a cheap no-op so an already-created
+# ticket-07 cache volume that predates this layer is populated on first use too.
+RUN sudo "$(command -v playwright)" install-deps chromium \
+    && playwright install chromium
 
 # Pre-create the cache directories docker-compose.yml mounts shared volumes onto
 # (ticket 07), owned by dev rather than left for Docker to create on first mount.
