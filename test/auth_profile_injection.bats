@@ -38,8 +38,15 @@ teardown() {
   "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
 }
 
+sandbox_up_with_home() {
+  local sandbox_home="$1"
+  shift
+  env HOME="$sandbox_home" DOCKER_CONFIG="$DOCKER_CONFIG" \
+    "$SANDBOX_BIN" up "$PROJECT_DIR" "$@"
+}
+
 @test "up --profile private injects the OAuth token and claude runs with no interactive login" {
-  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile private
+  run sandbox_up_with_home "$FAKE_HOME" --profile private
   [ "$status" -eq 0 ]
 
   run exec_in "printenv CLAUDE_CODE_OAUTH_TOKEN"
@@ -51,7 +58,7 @@ teardown() {
 }
 
 @test "up --profile work injects the Bedrock env vars" {
-  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile work
+  run sandbox_up_with_home "$FAKE_HOME" --profile work
   [ "$status" -eq 0 ]
 
   run exec_in "printenv CLAUDE_CODE_USE_BEDROCK"
@@ -75,7 +82,7 @@ teardown() {
 }
 
 @test "up --profile with an unknown profile name fails clearly" {
-  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile bogus
+  run sandbox_up_with_home "$FAKE_HOME" --profile bogus
   [ "$status" -ne 0 ]
   [[ "$output" == *"unknown profile"* ]]
 }
@@ -84,7 +91,7 @@ teardown() {
   local empty_home
   empty_home="$(mktemp -d)"
 
-  run env HOME="$empty_home" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile private
+  run sandbox_up_with_home "$empty_home" --profile private
   [ "$status" -ne 0 ]
   [[ "$output" == *"env.private"* ]]
 
@@ -92,11 +99,11 @@ teardown() {
 }
 
 @test "up --profile with an empty value fails clearly instead of silently skipping injection" {
-  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile ""
+  run sandbox_up_with_home "$FAKE_HOME" --profile ""
   [ "$status" -ne 0 ]
   [[ "$output" == *"non-empty"* ]]
 
-  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile=
+  run sandbox_up_with_home "$FAKE_HOME" --profile=
   [ "$status" -ne 0 ]
   [[ "$output" == *"non-empty"* ]]
 }

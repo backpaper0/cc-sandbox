@@ -5,6 +5,12 @@
 
 load helpers
 
+instance_name_from_project_dir() {
+  printf '%s' "$(basename "$1")" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr -c 'a-z0-9' '-'
+}
+
 setup_file() {
   export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
 
@@ -18,8 +24,8 @@ setup_file() {
   # Derived from each temp dir's own randomness, so re-running the suite never
   # collides with a leftover instance from a prior run that failed to tear down.
   export NAME_A NAME_B
-  NAME_A="list-a-$(printf '%s' "$(basename "$PROJECT_DIR_A")" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
-  NAME_B="list-b-$(printf '%s' "$(basename "$PROJECT_DIR_B")" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+  NAME_A="list-a-$(instance_name_from_project_dir "$PROJECT_DIR_A")"
+  NAME_B="list-b-$(instance_name_from_project_dir "$PROJECT_DIR_B")"
 }
 
 teardown_file() {
