@@ -40,6 +40,11 @@ fi
 iptables -C OUTPUT -j SANDBOX_ISOLATION 2>/dev/null \
   || iptables -A OUTPUT -j SANDBOX_ISOLATION
 
+# Allow replies from services intentionally published to the host (code-server)
+# while keeping new connections from dev to host/private addresses blocked.
+iptables -A SANDBOX_ISOLATION -m owner --uid-owner "${uid}" \
+  -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+
 # Exempt the DinD sidecar (ticket 05, docs/adr/0004's open point on ticket 05): it's
 # a compose service on this same private network, but its address falls inside the
 # RFC1918 ranges blocked below. Resolving it by service name and exempting just

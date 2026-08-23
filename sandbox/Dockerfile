@@ -7,6 +7,7 @@ ARG USER_GID=1000
 # layer instead of relying on cache misses that never happen.
 ARG CLAUDE_CODE_VERSION=2.1.241
 ARG PLAYWRIGHT_MCP_VERSION=0.0.79
+ARG PLAYWRIGHT_VERSION=1.63.0-alpha-2026-08-05
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
@@ -72,6 +73,7 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh
 RUN npm install -g \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
+      "playwright@${PLAYWRIGHT_VERSION}" \
     && mise reshim \
     && claude mcp add playwright --scope user -- \
       playwright-mcp --headless --browser chromium --no-sandbox \
@@ -80,7 +82,7 @@ RUN npm install -g \
 # Install Chromium's OS libraries into the image and seed the browser cache.
 # entrypoint.sh repeats the browser install as a cheap no-op so an already-created
 # ticket-07 cache volume that predates this layer is populated on first use too.
-RUN sudo "$(command -v playwright)" install-deps chromium \
+RUN sudo env PATH="${PATH}" "$(npm prefix -g)/bin/playwright" install-deps chromium \
     && playwright install chromium
 
 # Pre-create the cache directories docker-compose.yml mounts shared volumes onto

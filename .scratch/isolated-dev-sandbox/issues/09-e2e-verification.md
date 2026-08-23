@@ -23,3 +23,10 @@ BuildKitはoverlay mountの`operation not permitted`、legacy builderはdpkgの
 `Invalid cross-device link`となる既知のnested overlay/btrfs制約により、イメージを
 ビルドできなかった。このためWSL2/Linux-native Dockerでの全項目green確認は未完了。
 対応環境で `bin/test-e2e` を実行し、greenになった時点でチェックリストを完了する。
+
+2026-08-23の再検証では、Playwright CLIのglobal install不足、公開された
+code-serverへの応答まで遮断するiptablesルール、環境依存のテストfixtureを修正し、
+macOS上のOrbStack Linux daemon（Docker 29.4.0、overlay2）で全45件がgreenになった。
+ただしこれはWSL2/Linux-native実機での確認ではないため、先頭のチェック項目と
+`implemented-needs-verification`は維持する。対象実機で同じ`bin/test-e2e`を実行する
+だけで残る検証を完了できる。

@@ -18,8 +18,8 @@ setup_file() {
   # Derived from each temp dir's own randomness, so re-running the suite never
   # collides with a leftover instance from a prior run that failed to tear down.
   export NAME_A NAME_B
-  NAME_A="list-a-$(basename "$PROJECT_DIR_A")"
-  NAME_B="list-b-$(basename "$PROJECT_DIR_B")"
+  NAME_A="list-a-$(printf '%s' "$(basename "$PROJECT_DIR_A")" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
+  NAME_B="list-b-$(printf '%s' "$(basename "$PROJECT_DIR_B")" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
 }
 
 teardown_file() {
@@ -60,5 +60,9 @@ teardown_file() {
   run "$SANDBOX_BIN" list
   [ "$status" -eq 0 ]
   [[ "$output" != *"$NAME_A"* ]]
-  [[ "$output" == *"$NAME_B"* ]]
+  [[ "$output" == *"$NAME_B"* ]] || {
+    echo "expected remaining instance '$NAME_B' in list output:" >&2
+    echo "$output" >&2
+    false
+  }
 }

@@ -38,7 +38,7 @@ code_server_password() {
   [ "$status" -eq 0 ]
   [ -n "$(container_id)" ]
 
-  run exec_in "curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/"
+  run exec_in "curl -sS -L -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/"
   [ "$status" -eq 0 ]
   [ "$output" = "200" ]
 }
@@ -53,7 +53,7 @@ code_server_password() {
   addr="$(sed -n 's/^ *code-server: *http:\/\///p' <<<"$out")"
   [ -n "$addr" ]
 
-  run curl -sS -m 5 -o /dev/null -w '%{http_code}' "http://${addr}/"
+  run curl -sS -L -m 5 -o /dev/null -w '%{http_code}' "http://${addr}/"
   [ "$status" -eq 0 ]
   [ "$output" = "200" ]
 }

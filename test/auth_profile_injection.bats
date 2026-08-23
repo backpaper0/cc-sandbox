@@ -8,6 +8,7 @@ load helpers
 
 setup_file() {
   export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export DOCKER_CONFIG="${DOCKER_CONFIG:-${HOME}/.docker}"
   export PROJECT_DIR
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
   # a symlink into /private/var, and the CLI records the physical path it mounts.
@@ -38,7 +39,7 @@ teardown() {
 }
 
 @test "up --profile private injects the OAuth token and claude runs with no interactive login" {
-  run env HOME="$FAKE_HOME" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile private
+  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile private
   [ "$status" -eq 0 ]
 
   run exec_in "printenv CLAUDE_CODE_OAUTH_TOKEN"
@@ -50,7 +51,7 @@ teardown() {
 }
 
 @test "up --profile work injects the Bedrock env vars" {
-  run env HOME="$FAKE_HOME" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile work
+  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile work
   [ "$status" -eq 0 ]
 
   run exec_in "printenv CLAUDE_CODE_USE_BEDROCK"
@@ -74,7 +75,7 @@ teardown() {
 }
 
 @test "up --profile with an unknown profile name fails clearly" {
-  run env HOME="$FAKE_HOME" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile bogus
+  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile bogus
   [ "$status" -ne 0 ]
   [[ "$output" == *"unknown profile"* ]]
 }
@@ -83,7 +84,7 @@ teardown() {
   local empty_home
   empty_home="$(mktemp -d)"
 
-  run env HOME="$empty_home" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile private
+  run env HOME="$empty_home" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile private
   [ "$status" -ne 0 ]
   [[ "$output" == *"env.private"* ]]
 
@@ -91,11 +92,11 @@ teardown() {
 }
 
 @test "up --profile with an empty value fails clearly instead of silently skipping injection" {
-  run env HOME="$FAKE_HOME" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile ""
+  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile ""
   [ "$status" -ne 0 ]
   [[ "$output" == *"non-empty"* ]]
 
-  run env HOME="$FAKE_HOME" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile=
+  run env HOME="$FAKE_HOME" DOCKER_CONFIG="$DOCKER_CONFIG" "$SANDBOX_BIN" up "$PROJECT_DIR" --profile=
   [ "$status" -ne 0 ]
   [[ "$output" == *"non-empty"* ]]
 }
