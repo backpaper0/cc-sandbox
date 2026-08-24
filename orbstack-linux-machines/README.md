@@ -15,14 +15,16 @@ cloud-init 設定です。Claude Code には Playwright MCP を登録済みな�
 
 ## 作成
 
-`MACHINE` は任意の machine 名に読み替えてください。
+`MACHINE` は任意の machine 名に読み替えてください。`-u` で仮想マシン側のユーザー名にも
+同じ値を渡すので、machine 名とユーザー名は常に一致します。
 
 ```sh
 MACHINE=dev
 
 orbctl create \
   --isolated \
-  --mount ~/workspace:/home/"$USER"/workspace \
+  -u "$MACHINE" \
+  --mount ~/workspace:/home/"$MACHINE"/workspace \
   --user-data cloud-init.yaml \
   ubuntu "$MACHINE"
 ```
@@ -32,13 +34,14 @@ orbctl create \
 | オプション | 意味 |
 | --- | --- |
 | `--isolated` | machine を隔離モードで作る。ホストのファイル共有と各種統合（macOS の `$HOME` 自動マウント、コマンド連携など）が無効になる |
+| `-u`, `--user` | 作成する machine のデフォルトユーザー名を指定する。省略すると macOS 側のユーザー名になる |
 | `--mount SOURCE:DEST` | 隔離モードの machine に、ホストのディレクトリを個別にマウントする。`--isolated` と併用する場合のみ有効 |
 | `--user-data` | cloud-init の user data。`-c` でも同じ |
 
 `--isolated` を付けると、そのままではホストのファイルは一切見えません。そこに
 `--mount` で `~/workspace` だけを通しています。マウント先は明示が必要です
-（macOS のホームは `/Users/$USER`、Linux 側は `/home/$USER` でパスが違うため、
-`~/workspace:~/workspace` とは書けません）。
+（macOS のホームは `/Users/$USER`、Linux 側は `-u` で指定した `/home/$MACHINE` で
+パスが違うため、`~/workspace:~/workspace` とは書けません）。
 
 なお `--isolated` だけならネットワークはホストや他の machine と通じたままです。
 ネットワークも切りたい場合は `--isolate-network` を追加します。
@@ -60,7 +63,7 @@ orb -m "$MACHINE" -u root systemctl status provision-user.service
 ```sh
 orb -m "$MACHINE" bash -lc 'mise --version; docker version; claude --version'
 orb -m "$MACHINE" bash -lc 'claude mcp list'
-orb -m "$MACHINE" ls -al /home/"$USER"/workspace
+orb -m "$MACHINE" ls -al /home/"$MACHINE"/workspace
 ```
 
 `docker` を sudo なしで使うにはグループ変更の反映が必要なので、
@@ -221,8 +224,8 @@ Playwright を使うなら `--isolated` のみにしてください。
 
 ## 補足: ホームディレクトリの所有者
 
-`--mount` のマウント先をホーム配下（`/home/$USER/workspace`）にすると、OrbStack が親の
-`/home/$USER` を root 所有で先に作るため、ホームがユーザーから書けない状態になります。
+`--mount` のマウント先をホーム配下（`/home/$MACHINE/workspace`）にすると、OrbStack が親の
+`/home/$MACHINE` を root 所有で先に作るため、ホームがユーザーから書けない状態になります。
 Claude Code や mise は `$HOME` 配下にインストールするので、これは致命的です。
 
 `cloud-init.yaml` の `provision-user.sh` でホームを chown し直しているため、
@@ -230,5 +233,5 @@ Claude Code や mise は `$HOME` 配下にインストールするので、こ�
 手動で直してください。
 
 ```sh
-orb -m "$MACHINE" -u root chown "$USER" /home/"$USER"
+orb -m "$MACHINE" -u root chown "$MACHINE" /home/"$MACHINE"
 ```
