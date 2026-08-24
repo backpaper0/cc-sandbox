@@ -6,7 +6,7 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 
 ## できること
 
-- `bin/cc-sandbox up <project-dir>` でサンドボックスインスタンスを起動し、指定したプロジェクトディレクトリだけを `/workspace` にマウント
+- `cc-sandbox up <project-dir>` でサンドボックスインスタンスを起動し、指定したプロジェクトディレクトリだけを `/workspace` にマウント
 - サンドボックスからホストのサービス（`127.0.0.1` / `0.0.0.0` バインドの両方）への到達を遮断しつつ、インターネットへの外向き通信は維持
 - 認証プロファイル（`--profile`）で Claude Code の認証情報を注入するので、作り直しのたびに対話ログインする必要がない
 - code-server をランダムポート・localhost のみ・パスワード認証付きで公開
@@ -19,7 +19,18 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 
 - Linux ネイティブまたは WSL2 の Docker（特権コンテナを起動できること）、あるいは macOS の OrbStack / Docker Desktop
 - Bash
+- Git（インストール時に `~/.cc-sandbox/src` へ clone するため）
 - E2E テストを走らせる場合のみ [Bats](https://bats-core.readthedocs.io/)
+
+## インストール
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/backpaper0/cc-sandbox/main/install.sh | bash
+```
+
+リポジトリを `~/.cc-sandbox/src` に clone し（既にあれば `git pull` で更新）、`bin/cc-sandbox` を `~/.local/bin/cc-sandbox` へ symlink します（詳細は [ADR-0005](docs/adr/0005-install-script-fixed-clone-and-symlink.md)）。再実行すれば最新版に更新されます。`~/.local/bin` が PATH に無い場合は、追加すべき設定をインストーラが案内します。
+
+以降の使い方はすべて、インストール後に PATH の通った `cc-sandbox` コマンドを前提にしています。リポジトリ自体を手元に clone して開発している場合は、代わりに `bin/cc-sandbox` を直接実行してください。
 
 ## セットアップ：認証プロファイル
 
@@ -57,21 +68,21 @@ AWS_REGION=us-east-1
 ## 使い方
 
 ```
-bin/cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
-bin/cc-sandbox down [project-dir] [--name <slug>]
-bin/cc-sandbox list
+cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
+cc-sandbox down [project-dir] [--name <slug>]
+cc-sandbox list
 ```
 
 ### 起動
 
 ```sh
-bin/cc-sandbox up ~/work/my-project --profile private
+cc-sandbox up ~/work/my-project --profile private
 ```
 
 案件ごとにプロファイルを分けている場合はその名前を指定します。
 
 ```sh
-bin/cc-sandbox up ~/work/client-a-project --profile client-a
+cc-sandbox up ~/work/client-a-project --profile client-a
 ```
 
 イメージのビルド、本体コンテナと DinD サイドカーの起動、ネットワーク隔離ルールの適用、code-server の起動待ちまでを行い、最後に接続情報を出力します。
@@ -100,8 +111,8 @@ claude
 `--name` を付けると、プロジェクトディレクトリではなく明示したスラッグでインスタンスを識別します。同じディレクトリに対して複数のインスタンスを並行させたいときに使います。
 
 ```sh
-bin/cc-sandbox up ~/work/my-project --name feature-a --profile private
-bin/cc-sandbox up ~/work/my-project --name feature-b --profile private
+cc-sandbox up ~/work/my-project --name feature-a --profile private
+cc-sandbox up ~/work/my-project --name feature-b --profile private
 ```
 
 同じ名前を別のディレクトリに対して使おうとした場合は、既存インスタンスを黙って上書きせずエラーになります。
@@ -109,7 +120,7 @@ bin/cc-sandbox up ~/work/my-project --name feature-b --profile private
 ### 一覧
 
 ```sh
-bin/cc-sandbox list
+cc-sandbox list
 ```
 
 ```
@@ -121,9 +132,9 @@ feature-a                      /Users/you/work/my-project                    127
 ### 破棄
 
 ```sh
-bin/cc-sandbox down ~/work/my-project   # ディレクトリで指定
-bin/cc-sandbox down --name feature-a    # --name で起動したものは --name で指定
-bin/cc-sandbox down                     # 動いているインスタンスが1つだけならこれで足りる
+cc-sandbox down ~/work/my-project   # ディレクトリで指定
+cc-sandbox down --name feature-a    # --name で起動したものは --name で指定
+cc-sandbox down                     # 動いているインスタンスが1つだけならこれで足りる
 ```
 
 キャッシュ用の名前付きボリュームは削除されないので、次に `up` したときに再利用されます。指定に該当する起動中インスタンスがない場合は、成功したように見せずエラーになります。

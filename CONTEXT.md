@@ -35,3 +35,11 @@ _Avoid_: ネストDocker, Docker-in-Docker（説明文中ではこの一般名�
 **ホスト**:
 サンドボックスの外側にある、macOS（私的環境）またはWSL2 Ubuntu（業務環境）上の物理/仮想マシン。サンドボックスインスタンスから隔離される対象。
 _Avoid_: ローカル環境, マシン
+
+**`~/.cc-sandbox`**:
+ホスト側にある、cc-sandboxのローカル状態を置くディレクトリ（Git管理外）。認証プロファイル（`env.<name>`、[ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）と、`install.sh`がcloneするリポジトリ本体（`src/`）の両方をこの下に置く。
+_Avoid_: 設定ディレクトリ（何の設定か曖昧なので`~/.cc-sandbox`と明示する）
+
+**install.sh**:
+`curl -fsSL <URL> | bash`で取得・実行する、cc-sandboxのインストールスクリプト。リポジトリを`~/.cc-sandbox/src`にclone（既にあれば更新）し、`bin/cc-sandbox`を`~/.local/bin`へsymlinkすることで、どのディレクトリからでも`cc-sandbox`コマンドを呼べるようにする（[ADR-0005](docs/adr/0005-install-script-fixed-clone-and-symlink.md)）。
+_Avoid_: セットアップスクリプト, インストーラ（固有名詞のinstall.shで統一する）
