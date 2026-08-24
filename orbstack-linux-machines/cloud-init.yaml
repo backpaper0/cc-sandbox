@@ -138,7 +138,7 @@ write_files:
         "skipDangerousModePermissionPrompt": true,
         "spinnerTipsEnabled": false,
         "theme": "light",
-        "tui": "fullscreen"
+        "tui": "default"
       }
 
   # --- システム側のセットアップ（cloud-init の runcmd から実行）---------------
