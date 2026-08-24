@@ -8,7 +8,7 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 
 - `cc-sandbox up <project-dir>` でサンドボックスインスタンスを起動し、指定したプロジェクトディレクトリだけを `/workspace` にマウント
 - サンドボックスからホストのサービス（`127.0.0.1` / `0.0.0.0` バインドの両方）への到達を遮断しつつ、インターネットへの外向き通信は維持
-- 認証プロファイル（`--profile`）で Claude Code の認証情報を注入するので、作り直しのたびに対話ログインする必要がない
+- 認証プロファイル（`--profile`）で Claude Code の認証情報を注入するので、作り直しのたびに対話ログインする必要がない。名前を省略すると既存プロファイルから対話選択できる
 - code-server をランダムポート・localhost のみ・パスワード認証付きで公開
 - DinD サイドカーにより、サンドボックス内で `docker run` や Testcontainers が使える（ホストの Docker デーモンは触らせない）
 - Playwright MCP サーバーが同梱済みで、Claude Code が headless ブラウザで dev サーバーの画面を検証できる
@@ -65,6 +65,8 @@ AWS_REGION=us-east-1
 
 このファイルは `--profile` で指定したときだけ読み込まれ、本体コンテナに環境変数として注入されます。`~/.claude/.credentials.json` のマウントは行いません。
 
+どんな名前のプロファイルを作ったか忘れてしまった場合は、`--profile` に値を渡さずに実行すると（`--profile` を末尾に置く、`--profile=` の後を空にするなど）、`~/.cc-sandbox/env.*` から見つかった名前を一覧表示し、対話的に選択できます（詳細は [ADR-0006](docs/adr/0006-interactive-profile-selection.md)）。候補が0件、非TTY環境、選択のキャンセルはいずれもエラー終了します。
+
 ## 使い方
 
 ```
@@ -83,6 +85,20 @@ cc-sandbox up ~/work/my-project --profile private
 
 ```sh
 cc-sandbox up ~/work/client-a-project --profile client-a
+```
+
+名前を忘れた場合は値を省略すると一覧から選べます。
+
+```sh
+cc-sandbox up ~/work/my-project --profile
+```
+
+```
+1) private
+2) work
+3) client-a
+Select a profile: 1
+Using profile: private
 ```
 
 イメージのビルド、本体コンテナと DinD サイドカーの起動、ネットワーク隔離ルールの適用、code-server の起動待ちまでを行い、最後に接続情報を出力します。
