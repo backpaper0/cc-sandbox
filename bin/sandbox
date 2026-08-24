@@ -2,7 +2,7 @@
 # CLI entrypoint for the isolated dev sandbox (see .scratch/isolated-dev-sandbox/spec.md).
 set -euo pipefail
 
-SANDBOX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SANDBOX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 COMPOSE_FILE="${SANDBOX_ROOT}/sandbox/docker-compose.yml"
 
 # The non-root account inside the image (sandbox/Dockerfile's USERNAME), i.e. the
