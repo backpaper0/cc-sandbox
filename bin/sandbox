@@ -12,14 +12,16 @@ SANDBOX_USER=dev
 usage() {
   cat <<'EOF'
 Usage:
-  bin/sandbox up <project-dir> [--profile <private|work>] [--name <slug>]
+  bin/sandbox up <project-dir> [--profile <name>] [--name <slug>]
   bin/sandbox down [project-dir] [--name <slug>]
   bin/sandbox list
 
   up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
-        --profile loads ~/.sandbox/env.<profile> (see docs/adr/0003) and injects its
+        --profile loads ~/.sandbox/env.<name> (see docs/adr/0003) and injects its
         variables into the container so Claude Code is authenticated without an
-        interactive login.
+        interactive login. <name> may be any string of letters, digits, '-', and
+        '_' -- there's no fixed set of profiles, so you can keep one per client
+        or engagement rather than just "private"/"work".
         --name gives the instance an explicit slug, so multiple instances (e.g. of
         the same or different project dirs) can run side by side (see ticket 06).
         Without --name, the instance is named after <project-dir> as before.
@@ -31,23 +33,24 @@ Usage:
 EOF
 }
 
-# Resolves --profile <private|work> to its host-side, git-ignored env file
-# (see docs/adr/0003-auth-injection-per-host-profile.md). Fails loudly rather than
-# silently skipping injection, since a sandbox that looks up but isn't actually
-# authenticated is a confusing failure mode to debug from inside bypass permissions.
+# Resolves --profile <name> to its host-side, git-ignored env file (see
+# docs/adr/0003-auth-injection-per-host-profile.md). <name> isn't a fixed
+# private/work choice -- any string of letters/digits/-/_ works, so a developer
+# can keep one profile per client or engagement. The charset restriction exists
+# only to keep the name safe to interpolate into a path (no '/', no '..').
+# Fails loudly rather than silently skipping injection, since a sandbox that
+# looks up but isn't actually authenticated is a confusing failure mode to debug
+# from inside bypass permissions.
 resolve_profile_env_file() {
   local profile="$1"
-  case "${profile}" in
-    private | work) ;;
-    "")
-      echo "error: --profile requires a non-empty value ('private' or 'work')" >&2
-      exit 1
-      ;;
-    *)
-      echo "error: unknown profile '${profile}' (expected 'private' or 'work')" >&2
-      exit 1
-      ;;
-  esac
+  if [[ -z "${profile}" ]]; then
+    echo "error: --profile requires a non-empty value" >&2
+    exit 1
+  fi
+  if [[ ! "${profile}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    echo "error: invalid profile name '${profile}' (use only letters, digits, '-', and '_')" >&2
+    exit 1
+  fi
 
   if [[ -z "${HOME:-}" ]]; then
     echo "error: \$HOME is not set; cannot resolve --profile ${profile}" >&2

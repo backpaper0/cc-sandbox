@@ -1,8 +1,9 @@
 #!/usr/bin/env bats
 #
-# E2E tests for auth profile injection (ticket 03): `bin/sandbox up --profile
-# <private|work>` loads a host-side ~/.sandbox/env.<profile> file and injects its
-# variables into the sandbox container. Runs against a real Docker daemon, no mocks.
+# E2E tests for auth profile injection (ticket 03, extended by ticket 11 to allow
+# arbitrary profile names): `bin/sandbox up --profile <name>` loads a host-side
+# ~/.sandbox/env.<name> file and injects its variables into the sandbox container.
+# Runs against a real Docker daemon, no mocks.
 
 load helpers
 
@@ -27,6 +28,7 @@ setup_file() {
     echo "AWS_BEARER_TOKEN_BEDROCK=test-bedrock-key-value"
     echo "AWS_REGION=us-east-1"
   } > "${FAKE_HOME}/.sandbox/env.work"
+  echo "CLAUDE_CODE_OAUTH_TOKEN=test-client-a-token-value" > "${FAKE_HOME}/.sandbox/env.client-a"
 }
 
 teardown_file() {
@@ -70,6 +72,15 @@ sandbox_up_with_home() {
   [ "$output" = "test-bedrock-key-value" ]
 }
 
+@test "up --profile with an arbitrary (non-private/work) name injects that profile's env vars" {
+  run sandbox_up_with_home "$FAKE_HOME" --profile client-a
+  [ "$status" -eq 0 ]
+
+  run exec_in "printenv CLAUDE_CODE_OAUTH_TOKEN"
+  [ "$status" -eq 0 ]
+  [ "$output" = "test-client-a-token-value" ]
+}
+
 @test "up without --profile injects no auth env vars" {
   run "$SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
@@ -81,10 +92,10 @@ sandbox_up_with_home() {
   [ "$status" -ne 0 ]
 }
 
-@test "up --profile with an unknown profile name fails clearly" {
-  run sandbox_up_with_home "$FAKE_HOME" --profile bogus
+@test "up --profile with a name containing unsafe characters fails clearly" {
+  run sandbox_up_with_home "$FAKE_HOME" --profile "../etc"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"unknown profile"* ]]
+  [[ "$output" == *"invalid profile name"* ]]
 }
 
 @test "up --profile with a missing profile file fails clearly instead of silently skipping injection" {

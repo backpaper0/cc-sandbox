@@ -23,7 +23,7 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 
 ## セットアップ：認証プロファイル
 
-ホストごとに、Git 管理外のローカル設定ファイルを用意します（詳細は [ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）。
+`--profile <name>` に対応する `~/.sandbox/env.<name>` という、Git 管理外のローカル設定ファイルを用意します（詳細は [ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）。`<name>` は固定の2択ではなく、英数字・`-`・`_` からなる任意の名前を付けられるので、私的用途／業務用途だけでなく案件・クライアントごとにプロファイルを分けることもできます。
 
 私的環境（Claude サブスクリプション）— `~/.sandbox/env.private`:
 
@@ -44,12 +44,20 @@ AWS_BEARER_TOKEN_BEDROCK=<Bedrock の API キー>
 AWS_REGION=us-east-1
 ```
 
+案件ごとに認証情報を分けたい場合も、同じ形式で好きな名前のファイルを追加するだけです（例: `~/.sandbox/env.client-a`）。
+
+```sh
+CLAUDE_CODE_USE_BEDROCK=1
+AWS_BEARER_TOKEN_BEDROCK=<client-a 用の Bedrock API キー>
+AWS_REGION=us-east-1
+```
+
 このファイルは `--profile` で指定したときだけ読み込まれ、本体コンテナに環境変数として注入されます。`~/.claude/.credentials.json` のマウントは行いません。
 
 ## 使い方
 
 ```
-bin/sandbox up <project-dir> [--profile <private|work>] [--name <slug>]
+bin/sandbox up <project-dir> [--profile <name>] [--name <slug>]
 bin/sandbox down [project-dir] [--name <slug>]
 bin/sandbox list
 ```
@@ -58,6 +66,12 @@ bin/sandbox list
 
 ```sh
 bin/sandbox up ~/work/my-project --profile private
+```
+
+案件ごとにプロファイルを分けている場合はその名前を指定します。
+
+```sh
+bin/sandbox up ~/work/client-a-project --profile client-a
 ```
 
 イメージのビルド、本体コンテナと DinD サイドカーの起動、ネットワーク隔離ルールの適用、code-server の起動待ちまでを行い、最後に接続情報を出力します。
