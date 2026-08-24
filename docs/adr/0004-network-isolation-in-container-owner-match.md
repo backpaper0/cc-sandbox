@@ -112,3 +112,7 @@ DinD内で起動されたコンテナ（Testcontainers等）自体の隔離は�
 * ADR-0002 を置き換える。ADR-0002 が記録した「`--internal`ネットワークはインターネットアクセスも遮断してしまうため要件に合わない」「運用ルールのみでは`0.0.0.0`バインドの事故を防げない」という判断は本ADRでも引き続き有効であり、覆していない。変わったのは**ルールをどの層に置くか**だけである。
 * 実装: `sandbox/isolate.sh`（ルール本体）、`bin/sandbox` の `apply_network_isolation`、`sandbox/docker-compose.yml` の `cap_add: NET_ADMIN`、`sandbox/Dockerfile` の`iptables`パッケージ追加。
 * 検証の経緯は `.scratch/isolated-dev-sandbox/issues/02-network-isolation.md` の Comments に記録している。
+
+## 追記: ツール名リネームに伴う識別子の変更
+
+ツール名を cc-sandbox に統一したのに伴い、本ADRが参照している `bin/sandbox` は `bin/cc-sandbox` に、コンテナ内にインストールされるスクリプト名 `sandbox-isolate` / `sandbox-isolate-forward` / `sandbox-blocked-ranges` は `cc-sandbox-isolate` / `cc-sandbox-isolate-forward` / `cc-sandbox-blocked-ranges` にそれぞれリネームした。`sandbox/isolate.sh` 等、`sandbox/` ディレクトリ配下のソースファイルパス自体は変更していない。決定の本質（コンテナ内iptables + owner matchによる隔離方式）は変わっていない。

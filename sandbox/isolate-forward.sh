@@ -26,12 +26,12 @@ set -eu
 # so its default route names that interface, whatever Docker happens to call it.
 egress_iface="$(ip -o route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
 if [ -z "${egress_iface}" ]; then
-  echo "sandbox-isolate-forward: could not determine the DinD sidecar's egress interface" >&2
+  echo "cc-sandbox-isolate-forward: could not determine the DinD sidecar's egress interface" >&2
   exit 1
 fi
 
 # shellcheck source=blocked-ranges.sh
-. /usr/local/sbin/sandbox-blocked-ranges
+. /usr/local/sbin/cc-sandbox-blocked-ranges
 blocked="${SANDBOX_BLOCKED_RANGES}"
 
 # Same OrbStack/Docker Desktop bypass as isolate.sh. Uses "hosts" rather than

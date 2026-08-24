@@ -18,7 +18,7 @@ sandbox_user="${1:-dev}"
 uid="$(id -u "${sandbox_user}")"
 
 # shellcheck source=blocked-ranges.sh
-. /usr/local/sbin/sandbox-blocked-ranges
+. /usr/local/sbin/cc-sandbox-blocked-ranges
 blocked="${SANDBOX_BLOCKED_RANGES}"
 
 # OrbStack and Docker Desktop resolve host.docker.internal to an address outside
@@ -56,7 +56,7 @@ iptables -A SANDBOX_ISOLATION -m owner --uid-owner "${uid}" \
 # guarantee the embedded DNS already has the `dind` alias registered. Retried
 # rather than a single lookup, so a lost race here doesn't turn into every
 # sandbox<->dind connection being rejected -- including the `docker info` check
-# bin/sandbox's wait_for_dind depends on -- until the next `up`.
+# bin/cc-sandbox's wait_for_dind depends on -- until the next `up`.
 dind_ip=""
 attempt=1
 while [ -z "${dind_ip}" ] && [ "${attempt}" -le 10 ]; do

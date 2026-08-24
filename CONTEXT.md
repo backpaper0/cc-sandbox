@@ -1,11 +1,15 @@
-# 開発サンドボックス
+# cc-sandbox
 
 Claude Code を bypass permissions モードで安全に動かすため、ホスト（macOS / WSL2）から隔離された使い捨ての開発環境を一発コマンドで構築・破棄するための仕組み。
 
 ## Language
 
+**cc-sandbox**:
+このリポジトリが提供するツールそのものの名前（CLI・イメージ定義・関連スクリプト一式）。サンドボックス（後述）を一発コマンドで構築・破棄する主体を指す。
+_Avoid_: このツール, 本ツール（曖昧なので固有名詞のcc-sandboxを使う）。サンドボックスとは区別する（cc-sandboxは「構築する側」、サンドボックスは「構築される側」）
+
 **サンドボックス**:
-Claude Code と mise/uv/Python/Java/Node.js/Docker/Vim/code-server/Playwright MCPサーバー 一式を含む、ホストから隔離された使い捨ての開発ワークスペース（本体コンテナ + DinDサイドカー等のコンテナ群一式）の設計・構成そのものを指す。
+Claude Code と mise/uv/Python/Java/Node.js/Docker/Vim/code-server/Playwright MCPサーバー 一式を含む、ホストから隔離された使い捨ての開発ワークスペース（本体コンテナ + DinDサイドカー等のコンテナ群一式）の設計・構成そのものを指す。cc-sandbox（前述）が構築・破棄する対象であり、ツール自体の名前ではない。
 _Avoid_: 環境, コンテナ（単体を指すには曖昧）
 
 **Playwright MCPサーバー**:

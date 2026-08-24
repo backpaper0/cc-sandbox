@@ -2,8 +2,8 @@
 # CLI entrypoint for the isolated dev sandbox (see .scratch/isolated-dev-sandbox/spec.md).
 set -euo pipefail
 
-SANDBOX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-COMPOSE_FILE="${SANDBOX_ROOT}/sandbox/docker-compose.yml"
+CC_SANDBOX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+COMPOSE_FILE="${CC_SANDBOX_ROOT}/sandbox/docker-compose.yml"
 
 # The non-root account inside the image (sandbox/Dockerfile's USERNAME), i.e. the
 # user whose traffic the isolation rules apply to.
@@ -12,12 +12,12 @@ SANDBOX_USER=dev
 usage() {
   cat <<'EOF'
 Usage:
-  bin/sandbox up <project-dir> [--profile <name>] [--name <slug>]
-  bin/sandbox down [project-dir] [--name <slug>]
-  bin/sandbox list
+  bin/cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
+  bin/cc-sandbox down [project-dir] [--name <slug>]
+  bin/cc-sandbox list
 
   up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
-        --profile loads ~/.sandbox/env.<name> (see docs/adr/0003) and injects its
+        --profile loads ~/.cc-sandbox/env.<name> (see docs/adr/0003) and injects its
         variables into the container so Claude Code is authenticated without an
         interactive login. <name> may be any string of letters, digits, '-', and
         '_' -- there's no fixed set of profiles, so you can keep one per client
@@ -57,7 +57,7 @@ resolve_profile_env_file() {
     exit 1
   fi
 
-  local path="${HOME}/.sandbox/env.${profile}"
+  local path="${HOME}/.cc-sandbox/env.${profile}"
   if [[ ! -f "${path}" ]]; then
     echo "error: profile file not found: ${path}" >&2
     echo "Create it with the '${profile}' profile's environment variables before using --profile ${profile}." >&2
@@ -84,11 +84,11 @@ slugify() {
   base="${base%-}"
   local hash
   hash="$(printf '%s' "${input}" | sha256sum | cut -c1-8)"
-  echo "${base:-sandbox}-${hash}"
+  echo "${base:-cc-sandbox}-${hash}"
 }
 
 compose_project_name() {
-  echo "sandbox-$(slugify "$1")"
+  echo "cc-sandbox-$(slugify "$1")"
 }
 
 # Sanitizes a user-supplied --name into the same charset slugify() produces, but
@@ -119,7 +119,7 @@ sanitize_name() {
 compose_project_name_for_name() {
   local slug
   slug="$(sanitize_name "$1")" || return 1
-  echo "sandbox-${slug}"
+  echo "cc-sandbox-${slug}"
 }
 
 compose() {
@@ -131,7 +131,7 @@ compose() {
 # Fails closed rather than letting `docker compose up` silently redefine an
 # existing instance: without this check, `up <dirB> --name shared` while `up
 # <dirA> --name shared` is still running would make compose recreate the
-# `sandbox` service in place with dirB's bind mount -- i.e. one instance
+# `cc-sandbox` service in place with dirB's bind mount -- i.e. one instance
 # silently clobbers another's container, exactly what --name (ticket 06) is
 # meant to prevent by letting instances be told apart by name instead of only
 # by directory. Only relevant to the --name path: the directory-derived path
@@ -160,15 +160,15 @@ check_name_not_in_use_by_other_dir() {
     echo "error: internal: check_name_not_in_use_by_other_dir called before PROJECT_DIR was exported" >&2
     exit 1
   fi
-  existing_container="$(compose "${project_name}" ps -q sandbox 2>/dev/null || true)"
+  existing_container="$(compose "${project_name}" ps -q cc-sandbox 2>/dev/null || true)"
   if [[ -z "${existing_container}" ]]; then
     return 0
   fi
   local existing_dir
   existing_dir="$(container_workspace_dir "${existing_container}")"
   if [[ -n "${existing_dir}" && "${existing_dir}" != "${project_dir}" ]]; then
-    echo "error: an instance named '${project_name#sandbox-}' is already running for a different project directory (${existing_dir})" >&2
-    echo "Tear it down first with 'bin/sandbox down --name ${project_name#sandbox-}', or choose a different --name." >&2
+    echo "error: an instance named '${project_name#cc-sandbox-}' is already running for a different project directory (${existing_dir})" >&2
+    echo "Tear it down first with 'bin/cc-sandbox down --name ${project_name#cc-sandbox-}', or choose a different --name." >&2
     exit 1
   fi
 }
@@ -192,7 +192,7 @@ acquire_name_lock() {
     sleep 0.2
     waited=$((waited + 1))
     if [[ "${waited}" -gt 150 ]]; then
-      echo "error: timed out waiting for another 'bin/sandbox up --name ${project_name#sandbox-}' to finish" >&2
+      echo "error: timed out waiting for another 'bin/cc-sandbox up --name ${project_name#cc-sandbox-}' to finish" >&2
       exit 1
     fi
   done
@@ -207,7 +207,7 @@ acquire_name_lock() {
 # with the container.
 apply_network_isolation() {
   local container_id="$1"
-  docker exec -u root "${container_id}" /usr/local/sbin/sandbox-isolate "${SANDBOX_USER}"
+  docker exec -u root "${container_id}" /usr/local/sbin/cc-sandbox-isolate "${SANDBOX_USER}"
 }
 
 # Populates a Playwright cache volume created before ticket 10. This deliberately
@@ -238,7 +238,7 @@ apply_dind_network_isolation() {
   if [[ -z "${dind_container_id}" ]]; then
     return 1
   fi
-  docker exec -u root "${dind_container_id}" sh /usr/local/sbin/sandbox-isolate-forward
+  docker exec -u root "${dind_container_id}" sh /usr/local/sbin/cc-sandbox-isolate-forward
 }
 
 # Shared by wait_for_dind/wait_for_code_server below: both are "poll a readiness
@@ -371,22 +371,22 @@ cmd_up() {
   if [[ "${profile_given}" == true ]]; then
     env_file="$(resolve_profile_env_file "${profile}")"
   fi
-  export SANDBOX_ENV_FILE="${env_file}"
+  export CC_SANDBOX_ENV_FILE="${env_file}"
 
   # ticket 07: use the globally-shared Docker image-layer cache volume unless
   # another already-running instance currently holds it (see
   # dind_cache_volume_in_use_by_other_project and docker-compose.yml's
   # DIND_CACHE_VOLUME comment for why sharing it concurrently doesn't work).
-  local dind_cache_volume="sandbox-cache-docker-layers"
+  local dind_cache_volume="cc-sandbox-cache-docker-layers"
   if dind_cache_volume_in_use_by_other_project "${dind_cache_volume}" "${project_name}"; then
-    dind_cache_volume="sandbox-cache-docker-layers-${project_name}"
+    dind_cache_volume="cc-sandbox-cache-docker-layers-${project_name}"
   fi
   export DIND_CACHE_VOLUME="${dind_cache_volume}"
 
   compose "${project_name}" up -d --build
 
   local container_id
-  container_id="$(compose "${project_name}" ps -q sandbox)"
+  container_id="$(compose "${project_name}" ps -q cc-sandbox)"
 
   # Fail closed: a sandbox that came up without its isolation rules is worse than
   # no sandbox at all, since the whole point is to run Claude Code unsupervised in it.
@@ -431,7 +431,7 @@ cmd_up() {
   fi
 
   local code_server_addr
-  if ! code_server_addr="$(compose "${project_name}" port sandbox 8080)"; then
+  if ! code_server_addr="$(compose "${project_name}" port cc-sandbox 8080)"; then
     echo "error: failed to resolve code-server's published port for '${project_name}'; tearing down" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
@@ -443,14 +443,14 @@ cmd_up() {
   echo "  Enter with:   docker exec -it -u dev ${container_id} bash"
   echo "  code-server:  http://${code_server_addr}"
   echo "  Password:     docker exec -u dev ${container_id} grep '^password:' /home/${SANDBOX_USER}/.config/code-server/config.yaml"
-  if [[ "${dind_cache_volume}" != "sandbox-cache-docker-layers" ]]; then
+  if [[ "${dind_cache_volume}" != "cc-sandbox-cache-docker-layers" ]]; then
     echo "  Docker image-layer cache: instance-scoped (another running instance already holds the shared cache)"
   fi
 }
 
 running_sandbox_project_names() {
   docker ps --filter 'label=com.docker.compose.project' --format '{{.Label "com.docker.compose.project"}}' \
-    | sort -u | grep '^sandbox-' || true
+    | sort -u | grep '^cc-sandbox-' || true
 }
 
 cmd_down() {
@@ -524,7 +524,7 @@ cmd_down() {
 
   # The isolation rules live inside the container, so removing it removes them too.
   export PROJECT_DIR="${resolved_project_dir}"
-  export SANDBOX_ENV_FILE="/dev/null"
+  export CC_SANDBOX_ENV_FILE="/dev/null"
 
   # Fails loudly rather than letting `compose down` silently exit 0 against a
   # project with nothing running (e.g. a typo'd --name, or a <project-dir> whose
@@ -532,8 +532,8 @@ cmd_down() {
   # project name) -- found in review: without this, a caller relying on the exit
   # code to confirm teardown is misled into thinking the instance it meant to stop
   # is gone when it's still running.
-  if [[ -z "$(compose "${project_name}" ps -q sandbox 2>/dev/null || true)" ]]; then
-    echo "error: no running sandbox instance found for '${project_name#sandbox-}'" >&2
+  if [[ -z "$(compose "${project_name}" ps -q cc-sandbox 2>/dev/null || true)" ]]; then
+    echo "error: no running sandbox instance found for '${project_name#cc-sandbox-}'" >&2
     exit 1
   fi
 
@@ -552,7 +552,7 @@ list_row() {
   local container_id
   container_id="$(docker ps -q \
     --filter "label=com.docker.compose.project=${project_name}" \
-    --filter "label=com.docker.compose.service=sandbox")"
+    --filter "label=com.docker.compose.service=cc-sandbox")"
   if [[ -z "${container_id}" ]]; then
     return
   fi
@@ -567,7 +567,7 @@ list_row() {
   code_server_addr="$(docker port "${container_id}" 8080 2>/dev/null || true)"
 
   printf '%-30s %-45s %s\n' \
-    "${project_name#sandbox-}" "${project_dir:-?}" "${code_server_addr:-(not ready)}"
+    "${project_name#cc-sandbox-}" "${project_dir:-?}" "${code_server_addr:-(not ready)}"
 }
 
 cmd_list() {

@@ -6,7 +6,7 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 
 ## できること
 
-- `bin/sandbox up <project-dir>` でサンドボックスインスタンスを起動し、指定したプロジェクトディレクトリだけを `/workspace` にマウント
+- `bin/cc-sandbox up <project-dir>` でサンドボックスインスタンスを起動し、指定したプロジェクトディレクトリだけを `/workspace` にマウント
 - サンドボックスからホストのサービス（`127.0.0.1` / `0.0.0.0` バインドの両方）への到達を遮断しつつ、インターネットへの外向き通信は維持
 - 認証プロファイル（`--profile`）で Claude Code の認証情報を注入するので、作り直しのたびに対話ログインする必要がない
 - code-server をランダムポート・localhost のみ・パスワード認証付きで公開
@@ -23,9 +23,9 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 
 ## セットアップ：認証プロファイル
 
-`--profile <name>` に対応する `~/.sandbox/env.<name>` という、Git 管理外のローカル設定ファイルを用意します（詳細は [ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）。`<name>` は固定の2択ではなく、英数字・`-`・`_` からなる任意の名前を付けられるので、私的用途／業務用途だけでなく案件・クライアントごとにプロファイルを分けることもできます。
+`--profile <name>` に対応する `~/.cc-sandbox/env.<name>` という、Git 管理外のローカル設定ファイルを用意します（詳細は [ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）。`<name>` は固定の2択ではなく、英数字・`-`・`_` からなる任意の名前を付けられるので、私的用途／業務用途だけでなく案件・クライアントごとにプロファイルを分けることもできます。
 
-私的環境（Claude サブスクリプション）— `~/.sandbox/env.private`:
+私的環境（Claude サブスクリプション）— `~/.cc-sandbox/env.private`:
 
 ```sh
 # ホスト側で一度だけ発行する
@@ -36,7 +36,7 @@ claude setup-token
 CLAUDE_CODE_OAUTH_TOKEN=<setup-token で発行した長期トークン>
 ```
 
-業務環境（Amazon Bedrock）— `~/.sandbox/env.work`:
+業務環境（Amazon Bedrock）— `~/.cc-sandbox/env.work`:
 
 ```sh
 CLAUDE_CODE_USE_BEDROCK=1
@@ -44,7 +44,7 @@ AWS_BEARER_TOKEN_BEDROCK=<Bedrock の API キー>
 AWS_REGION=us-east-1
 ```
 
-案件ごとに認証情報を分けたい場合も、同じ形式で好きな名前のファイルを追加するだけです（例: `~/.sandbox/env.client-a`）。
+案件ごとに認証情報を分けたい場合も、同じ形式で好きな名前のファイルを追加するだけです（例: `~/.cc-sandbox/env.client-a`）。
 
 ```sh
 CLAUDE_CODE_USE_BEDROCK=1
@@ -57,27 +57,27 @@ AWS_REGION=us-east-1
 ## 使い方
 
 ```
-bin/sandbox up <project-dir> [--profile <name>] [--name <slug>]
-bin/sandbox down [project-dir] [--name <slug>]
-bin/sandbox list
+bin/cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
+bin/cc-sandbox down [project-dir] [--name <slug>]
+bin/cc-sandbox list
 ```
 
 ### 起動
 
 ```sh
-bin/sandbox up ~/work/my-project --profile private
+bin/cc-sandbox up ~/work/my-project --profile private
 ```
 
 案件ごとにプロファイルを分けている場合はその名前を指定します。
 
 ```sh
-bin/sandbox up ~/work/client-a-project --profile client-a
+bin/cc-sandbox up ~/work/client-a-project --profile client-a
 ```
 
 イメージのビルド、本体コンテナと DinD サイドカーの起動、ネットワーク隔離ルールの適用、code-server の起動待ちまでを行い、最後に接続情報を出力します。
 
 ```
-Sandbox 'sandbox-my-project-1a2b3c4d' is up.
+Sandbox 'cc-sandbox-my-project-1a2b3c4d' is up.
   Project dir:  /Users/you/work/my-project -> /workspace
   Enter with:   docker exec -it -u dev <container-id> bash
   code-server:  http://127.0.0.1:54321
@@ -100,8 +100,8 @@ claude
 `--name` を付けると、プロジェクトディレクトリではなく明示したスラッグでインスタンスを識別します。同じディレクトリに対して複数のインスタンスを並行させたいときに使います。
 
 ```sh
-bin/sandbox up ~/work/my-project --name feature-a --profile private
-bin/sandbox up ~/work/my-project --name feature-b --profile private
+bin/cc-sandbox up ~/work/my-project --name feature-a --profile private
+bin/cc-sandbox up ~/work/my-project --name feature-b --profile private
 ```
 
 同じ名前を別のディレクトリに対して使おうとした場合は、既存インスタンスを黙って上書きせずエラーになります。
@@ -109,7 +109,7 @@ bin/sandbox up ~/work/my-project --name feature-b --profile private
 ### 一覧
 
 ```sh
-bin/sandbox list
+bin/cc-sandbox list
 ```
 
 ```
@@ -121,9 +121,9 @@ feature-a                      /Users/you/work/my-project                    127
 ### 破棄
 
 ```sh
-bin/sandbox down ~/work/my-project   # ディレクトリで指定
-bin/sandbox down --name feature-a    # --name で起動したものは --name で指定
-bin/sandbox down                     # 動いているインスタンスが1つだけならこれで足りる
+bin/cc-sandbox down ~/work/my-project   # ディレクトリで指定
+bin/cc-sandbox down --name feature-a    # --name で起動したものは --name で指定
+bin/cc-sandbox down                     # 動いているインスタンスが1つだけならこれで足りる
 ```
 
 キャッシュ用の名前付きボリュームは削除されないので、次に `up` したときに再利用されます。指定に該当する起動中インスタンスがない場合は、成功したように見せずエラーになります。
@@ -163,7 +163,7 @@ Playwright MCP サーバーはイメージに焼き込まれ、ユーザース�
 bin/test-e2e
 ```
 
-実際の Docker デーモンに対して `bin/sandbox` の公開 CLI を叩く Bats ベースの受け入れテストで、Docker のモックは行いません。前提条件と対象プラットフォームの範囲は [docs/e2e-testing.md](docs/e2e-testing.md) を参照してください。
+実際の Docker デーモンに対して `bin/cc-sandbox` の公開 CLI を叩く Bats ベースの受け入れテストで、Docker のモックは行いません。前提条件と対象プラットフォームの範囲は [docs/e2e-testing.md](docs/e2e-testing.md) を参照してください。
 
 ## ドキュメント
 

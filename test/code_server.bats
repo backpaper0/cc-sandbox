@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# E2E tests for code-server integration (ticket 04): `bin/sandbox up` starts
+# E2E tests for code-server integration (ticket 04): `bin/cc-sandbox up` starts
 # code-server inside the sandbox container, reachable only from the host's
 # loopback interface and behind password auth. Runs against a real Docker
 # daemon, no mocks.
@@ -8,7 +8,7 @@
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
   export PROJECT_DIR
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
   # a symlink into /private/var, and the CLI records the physical path it mounts.
@@ -17,15 +17,15 @@ setup_file() {
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR"
 }
 
 # The host-side "IP:port" code-server is published on, read the same way a
-# developer would: from `bin/sandbox up`'s own output, not recomputed from the
+# developer would: from `bin/cc-sandbox up`'s own output, not recomputed from the
 # CLI's internal compose-project-name scheme.
 code_server_addr() {
-  "$SANDBOX_BIN" up "$PROJECT_DIR" | sed -n 's/^ *code-server: *http:\/\///p'
+  "$CC_SANDBOX_BIN" up "$PROJECT_DIR" | sed -n 's/^ *code-server: *http:\/\///p'
 }
 
 code_server_password() {
@@ -34,7 +34,7 @@ code_server_password() {
 }
 
 @test "up starts the sandbox with code-server running" {
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ -n "$(container_id)" ]
 
@@ -45,7 +45,7 @@ code_server_password() {
 
 @test "up's output reports a reachable code-server URL and how to fetch the password" {
   local out
-  out="$("$SANDBOX_BIN" up "$PROJECT_DIR")"
+  out="$("$CC_SANDBOX_BIN" up "$PROJECT_DIR")"
   [[ "$out" == *"code-server:"*"http://127.0.0.1:"* ]]
   [[ "$out" == *"Password:"*"config.yaml"* ]]
 
@@ -93,7 +93,7 @@ code_server_password() {
 }
 
 @test "down removes the sandbox and code-server with it" {
-  run "$SANDBOX_BIN" down "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" down "$PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ -z "$(container_id)" ]
 }

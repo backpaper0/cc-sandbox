@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# E2E tests for the DinD sidecar and Testcontainers support (ticket 05): `bin/sandbox
+# E2E tests for the DinD sidecar and Testcontainers support (ticket 05): `bin/cc-sandbox
 # up` gives the sandbox container a working `docker` command backed by a nested DinD
 # daemon, containers started through it are subject to the same isolation as the
 # sandbox container itself, and Testcontainers-based tests succeed. Runs against a
@@ -9,7 +9,7 @@
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
   export PROJECT_DIR
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
   # a symlink into /private/var, and the CLI records the physical path it mounts.
@@ -29,12 +29,12 @@ import time; time.sleep(600)
   export HOST_LISTENER_PID=$!
   sleep 1
 
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
   kill "$HOST_LISTENER_PID" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR"
 }

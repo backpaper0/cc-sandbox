@@ -23,14 +23,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       docker.io \
     && rm -rf /var/lib/apt/lists/*
 
-# Network isolation runs inside the container (see docs/adr/0004); `bin/sandbox up`
+# Network isolation runs inside the container (see docs/adr/0004); `bin/cc-sandbox up`
 # invokes this as root once the container is running. blocked-ranges.sh is shared
 # with sandbox/isolate-forward.sh (the DinD sidecar's own isolation, ticket 05),
 # which sources it from the same path via a bind mount instead of a build (see
 # sandbox/docker-compose.yml's `dind` service).
-COPY blocked-ranges.sh /usr/local/sbin/sandbox-blocked-ranges
-COPY isolate.sh /usr/local/sbin/sandbox-isolate
-RUN chmod 0755 /usr/local/sbin/sandbox-isolate
+COPY blocked-ranges.sh /usr/local/sbin/cc-sandbox-blocked-ranges
+COPY isolate.sh /usr/local/sbin/cc-sandbox-isolate
+RUN chmod 0755 /usr/local/sbin/cc-sandbox-isolate
 
 # Downloaded to a file rather than piped straight into sh: /bin/sh here is dash,
 # which has no pipefail, so a failed curl (e.g. a network blip) would otherwise
@@ -40,8 +40,8 @@ RUN curl -fsSL https://code-server.dev/install.sh -o /tmp/install-code-server.sh
     && sh /tmp/install-code-server.sh \
     && rm /tmp/install-code-server.sh
 
-COPY entrypoint.sh /usr/local/bin/sandbox-entrypoint
-RUN chmod 0755 /usr/local/bin/sandbox-entrypoint
+COPY entrypoint.sh /usr/local/bin/cc-sandbox-entrypoint
+RUN chmod 0755 /usr/local/bin/cc-sandbox-entrypoint
 
 # ubuntu:24.04 ships a stock "ubuntu" account at uid/gid 1000, which collides
 # with the dev user below whenever USER_UID/USER_GID point at an occupied id.
@@ -87,7 +87,7 @@ COPY --chown=${USERNAME}:${USERNAME} claude-wrapper.sh "${HOME}/.local/bin/claud
 RUN chmod 0755 "${HOME}/.local/bin/claude"
 
 # Install Chromium's OS libraries into the image and seed the browser cache.
-# bin/sandbox repeats the browser install after applying network isolation as a
+# bin/cc-sandbox repeats the browser install after applying network isolation as a
 # cheap no-op, so an already-created ticket-07 cache volume that predates this
 # layer is populated safely on first use too.
 RUN sudo env PATH="${PATH}" "$(npm prefix -g)/bin/playwright" install-deps chromium \
@@ -102,5 +102,5 @@ RUN sudo env PATH="${PATH}" "$(npm prefix -g)/bin/playwright" install-deps chrom
 RUN mkdir -p "${HOME}/.cache/uv" "${HOME}/.npm" "${HOME}/.m2" "${HOME}/.cache/ms-playwright"
 
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/sandbox-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/cc-sandbox-entrypoint"]
 CMD ["sleep", "infinity"]

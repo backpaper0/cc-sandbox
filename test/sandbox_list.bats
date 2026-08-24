@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# E2E tests for `bin/sandbox list` (ticket 08: sandbox list command).
+# E2E tests for `bin/cc-sandbox list` (ticket 08: sandbox list command).
 # Runs against a real Docker daemon, no mocks.
 
 load helpers
@@ -12,7 +12,7 @@ instance_name_from_project_dir() {
 }
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
 
   export PROJECT_DIR_A PROJECT_DIR_B
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
@@ -29,26 +29,26 @@ setup_file() {
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down --name "$NAME_A" >/dev/null 2>&1 || true
-  "$SANDBOX_BIN" down --name "$NAME_B" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down --name "$NAME_A" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down --name "$NAME_B" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR_A" "$PROJECT_DIR_B"
 }
 
 # Runs before either instance is started (see the ordering of the other tests
 # below), so this is the one place we can observe the genuinely-empty case.
 @test "list reports no instances and exits 0 when none are running" {
-  run "$SANDBOX_BIN" list
+  run "$CC_SANDBOX_BIN" list
   [ "$status" -eq 0 ]
   [[ "$output" == *"No sandbox instances are running"* ]]
 }
 
 @test "list shows both running instances with their project dir and code-server address" {
-  run "$SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
   [ "$status" -eq 0 ]
-  run "$SANDBOX_BIN" up "$PROJECT_DIR_B" --name "$NAME_B"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR_B" --name "$NAME_B"
   [ "$status" -eq 0 ]
 
-  run "$SANDBOX_BIN" list
+  run "$CC_SANDBOX_BIN" list
   [ "$status" -eq 0 ]
   [[ "$output" == *"$NAME_A"* ]]
   [[ "$output" == *"$PROJECT_DIR_A"* ]]
@@ -60,10 +60,10 @@ teardown_file() {
 }
 
 @test "down removes an instance from the list without affecting the other" {
-  run "$SANDBOX_BIN" down --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" down --name "$NAME_A"
   [ "$status" -eq 0 ]
 
-  run "$SANDBOX_BIN" list
+  run "$CC_SANDBOX_BIN" list
   [ "$status" -eq 0 ]
   [[ "$output" != *"$NAME_A"* ]]
   [[ "$output" == *"$NAME_B"* ]] || {

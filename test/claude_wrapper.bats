@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
 # E2E tests for the claude wrapper (CONTEXT.md's "claudeラッパー"). The public
-# seam is bin/sandbox: tests start a real sandbox instance, then observe how
+# seam is bin/cc-sandbox: tests start a real sandbox instance, then observe how
 # `claude` actually resolves and what it actually execs inside the running
 # container. No mocking of Docker or of the real `claude` binary -- flag
 # injection is observed via `bash -x`, which traces the wrapper's own `exec`
@@ -10,15 +10,15 @@
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
   export PROJECT_DIR
   PROJECT_DIR="$(cd "$(mktemp -d)" && pwd -P)"
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR"
 }
 

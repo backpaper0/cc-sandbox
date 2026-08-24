@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# E2E tests for network isolation (ticket 02): `bin/sandbox up` blocks the sandbox's
+# E2E tests for network isolation (ticket 02): `bin/cc-sandbox up` blocks the sandbox's
 # non-root user from reaching host-bound services while still allowing internet
 # access. Runs against a real Docker daemon and real iptables, no mocks.
 #
@@ -10,7 +10,7 @@
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
   export PROJECT_DIR
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
   # a symlink into /private/var, and the CLI records the physical path it mounts.
@@ -35,7 +35,7 @@ import time; time.sleep(600)
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
   kill "$HOST_LISTENER_PID" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR"
 }
@@ -48,7 +48,7 @@ gateway_ip() {
 }
 
 @test "up starts the sandbox with network isolation applied" {
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ -n "$(container_id)" ]
 }
@@ -84,7 +84,7 @@ gateway_ip() {
 }
 
 @test "re-running up against a live sandbox keeps the isolation in place" {
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
 
   run exec_in "curl -sS -m 3 -o /dev/null -w '%{http_code}' http://host.docker.internal:${HOST_PORT_ALL_INTERFACES}/"
@@ -96,7 +96,7 @@ gateway_ip() {
 }
 
 @test "down removes the sandbox" {
-  run "$SANDBOX_BIN" down "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" down "$PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ -z "$(container_id)" ]
 }

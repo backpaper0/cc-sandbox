@@ -1,14 +1,14 @@
 #!/usr/bin/env bats
 #
 # E2E tests for auth profile injection (ticket 03, extended by ticket 11 to allow
-# arbitrary profile names): `bin/sandbox up --profile <name>` loads a host-side
-# ~/.sandbox/env.<name> file and injects its variables into the sandbox container.
+# arbitrary profile names): `bin/cc-sandbox up --profile <name>` loads a host-side
+# ~/.cc-sandbox/env.<name> file and injects its variables into the sandbox container.
 # Runs against a real Docker daemon, no mocks.
 
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
   export DOCKER_CONFIG="${DOCKER_CONFIG:-${HOME}/.docker}"
   export PROJECT_DIR
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
@@ -16,35 +16,35 @@ setup_file() {
   # Comparing the two forms below would never match.
   PROJECT_DIR="$(cd "$(mktemp -d)" && pwd -P)"
 
-  # A fake $HOME so these tests never touch the real developer's ~/.sandbox.
-  # bin/sandbox resolves profile files from $HOME at runtime, so overriding it on
+  # A fake $HOME so these tests never touch the real developer's ~/.cc-sandbox.
+  # bin/cc-sandbox resolves profile files from $HOME at runtime, so overriding it on
   # invocation is enough -- no code under test needs to know this is a test.
   export FAKE_HOME
   FAKE_HOME="$(mktemp -d)"
-  mkdir -p "${FAKE_HOME}/.sandbox"
-  echo "CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token-value" > "${FAKE_HOME}/.sandbox/env.private"
+  mkdir -p "${FAKE_HOME}/.cc-sandbox"
+  echo "CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token-value" > "${FAKE_HOME}/.cc-sandbox/env.private"
   {
     echo "CLAUDE_CODE_USE_BEDROCK=1"
     echo "AWS_BEARER_TOKEN_BEDROCK=test-bedrock-key-value"
     echo "AWS_REGION=us-east-1"
-  } > "${FAKE_HOME}/.sandbox/env.work"
-  echo "CLAUDE_CODE_OAUTH_TOKEN=test-client-a-token-value" > "${FAKE_HOME}/.sandbox/env.client-a"
+  } > "${FAKE_HOME}/.cc-sandbox/env.work"
+  echo "CLAUDE_CODE_OAUTH_TOKEN=test-client-a-token-value" > "${FAKE_HOME}/.cc-sandbox/env.client-a"
 }
 
 teardown_file() {
-  HOME="${FAKE_HOME}" "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  HOME="${FAKE_HOME}" "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR" "$FAKE_HOME"
 }
 
 teardown() {
-  "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
 }
 
 sandbox_up_with_home() {
   local sandbox_home="$1"
   shift
   env HOME="$sandbox_home" DOCKER_CONFIG="$DOCKER_CONFIG" \
-    "$SANDBOX_BIN" up "$PROJECT_DIR" "$@"
+    "$CC_SANDBOX_BIN" up "$PROJECT_DIR" "$@"
 }
 
 @test "up --profile private injects the OAuth token and claude runs with no interactive login" {
@@ -82,7 +82,7 @@ sandbox_up_with_home() {
 }
 
 @test "up without --profile injects no auth env vars" {
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
 
   run exec_in "printenv CLAUDE_CODE_OAUTH_TOKEN"

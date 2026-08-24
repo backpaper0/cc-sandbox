@@ -4,7 +4,7 @@
 # in named volumes shared by every sandbox instance (rather than one per instance);
 # the DinD sidecar's Docker image-layer cache does too, except that a concurrently
 # running instance falls back to its own instance-scoped volume instead (see
-# bin/sandbox's dind_cache_volume_in_use_by_other_project). Either way, `down`
+# bin/cc-sandbox's dind_cache_volume_in_use_by_other_project). Either way, `down`
 # doesn't lose these volumes, and a freshly (re)created instance reuses whatever's
 # already cached instead of re-downloading it. Runs against a real Docker daemon,
 # no mocks.
@@ -13,7 +13,7 @@ load helpers
 
 # Container-side paths whose caches must be backed by a volume shared across all
 # instances -- kept as one table so every test below iterates the same set instead
-# of drifting out of sync with sandbox/docker-compose.yml's `sandbox` service.
+# of drifting out of sync with sandbox/docker-compose.yml's `cc-sandbox` service.
 CACHE_PATHS=(
   "/home/dev/.local/share/mise"
   "/home/dev/.cache/uv"
@@ -23,7 +23,7 @@ CACHE_PATHS=(
 )
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
 
   export PROJECT_DIR_A PROJECT_DIR_B
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
@@ -36,15 +36,15 @@ setup_file() {
   NAME_A="cache-a-$(basename "$PROJECT_DIR_A")"
   NAME_B="cache-b-$(basename "$PROJECT_DIR_B")"
 
-  run "$SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
   [ "$status" -eq 0 ]
-  run "$SANDBOX_BIN" up "$PROJECT_DIR_B" --name "$NAME_B"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR_B" --name "$NAME_B"
   [ "$status" -eq 0 ]
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down --name "$NAME_A" >/dev/null 2>&1 || true
-  "$SANDBOX_BIN" down --name "$NAME_B" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down --name "$NAME_A" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down --name "$NAME_B" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR_A" "$PROJECT_DIR_B"
 }
 
@@ -64,7 +64,7 @@ teardown_file() {
 @test "the DinD sidecar's Docker image-layer cache falls back to a per-instance volume when the shared one is already taken" {
   # Sharing /var/lib/docker between two *concurrently running* dind daemons hangs
   # the second one (containerd's metadata store takes an exclusive lock on it) --
-  # found in review, see bin/sandbox's dind_cache_volume_in_use_by_other_project
+  # found in review, see bin/cc-sandbox's dind_cache_volume_in_use_by_other_project
   # and docker-compose.yml's DIND_CACHE_VOLUME comment. So instance A (started
   # first, in setup_file) claims the globally-shared volume, and instance B
   # (started next, while A is still up) must fall back to its own instance-scoped
@@ -80,8 +80,8 @@ teardown_file() {
   [ -n "$vol_a" ]
   [ -n "$vol_b" ]
 
-  [ "$vol_a" = "sandbox-cache-docker-layers" ]
-  [ "$vol_b" != "sandbox-cache-docker-layers" ]
+  [ "$vol_a" = "cc-sandbox-cache-docker-layers" ]
+  [ "$vol_b" != "cc-sandbox-cache-docker-layers" ]
   [ "$vol_a" != "$vol_b" ]
 }
 
@@ -118,10 +118,10 @@ teardown_file() {
   run exec_in_container "$cid" "echo cached-content > ${marker_path}"
   [ "$status" -eq 0 ]
 
-  run "$SANDBOX_BIN" down --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" down --name "$NAME_A"
   [ "$status" -eq 0 ]
 
-  run "$SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
   [ "$status" -eq 0 ]
 
   local new_cid

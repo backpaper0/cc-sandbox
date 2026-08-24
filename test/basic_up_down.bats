@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
 #
-# E2E tests for `bin/sandbox up` / `bin/sandbox down` (ticket 01: basic up/down).
+# E2E tests for `bin/cc-sandbox up` / `bin/cc-sandbox down` (ticket 01: basic up/down).
 # Runs against a real Docker daemon, no mocks.
 
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
   export PROJECT_DIR
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
   # a symlink into /private/var, and the CLI records the physical path it mounts.
@@ -15,12 +15,12 @@ setup_file() {
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR"
 }
 
 @test "up starts the sandbox container" {
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ -n "$(container_id)" ]
 }
@@ -66,7 +66,7 @@ teardown_file() {
 }
 
 @test "down removes the container and compose resources" {
-  run "$SANDBOX_BIN" down "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" down "$PROJECT_DIR"
   [ "$status" -eq 0 ]
   [ -z "$(container_id)" ]
 }

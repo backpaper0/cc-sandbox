@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
 # E2E tests for running multiple sandbox instances side by side (ticket 06):
-# `bin/sandbox up --name <slug>` lets two instances run at once, each with its own
+# `bin/cc-sandbox up --name <slug>` lets two instances run at once, each with its own
 # Docker network and project bind mount, unreachable from each other, and `down
 # --name <slug>` tears one down without touching the other. Runs against a real
 # Docker daemon, no mocks.
@@ -9,7 +9,7 @@
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
 
   export PROJECT_DIR_A PROJECT_DIR_B
   # Resolve symlinks: on macOS `mktemp -d` hands back a /var/... path that is really
@@ -26,15 +26,15 @@ setup_file() {
 
   export INSTANCE_PORT=8100
 
-  run "$SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR_A" --name "$NAME_A"
   [ "$status" -eq 0 ]
-  run "$SANDBOX_BIN" up "$PROJECT_DIR_B" --name "$NAME_B"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR_B" --name "$NAME_B"
   [ "$status" -eq 0 ]
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down --name "$NAME_A" >/dev/null 2>&1 || true
-  "$SANDBOX_BIN" down --name "$NAME_B" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down --name "$NAME_A" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down --name "$NAME_B" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR_A" "$PROJECT_DIR_B"
 }
 
@@ -66,7 +66,7 @@ teardown_file() {
   local other_dir
   other_dir="$(cd "$(mktemp -d)" && pwd -P)"
 
-  run "$SANDBOX_BIN" up "$other_dir" --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" up "$other_dir" --name "$NAME_A"
   [ "$status" -ne 0 ]
   [[ "$output" == *"already running for a different project directory"* ]]
 
@@ -100,7 +100,7 @@ teardown_file() {
 }
 
 @test "tearing down one instance leaves the other running" {
-  run "$SANDBOX_BIN" down --name "$NAME_A"
+  run "$CC_SANDBOX_BIN" down --name "$NAME_A"
   [ "$status" -eq 0 ]
   [ -z "$(container_id "$PROJECT_DIR_A")" ]
 

@@ -1,17 +1,17 @@
 services:
-  sandbox:
+  cc-sandbox:
     build: .
     init: true
-    # Needed so `bin/sandbox up` can install the isolation rules from inside the
+    # Needed so `bin/cc-sandbox up` can install the isolation rules from inside the
     # container (see docs/adr/0004).
     cap_add:
       - NET_ADMIN
-    # See docs/adr/0003: bin/sandbox resolves --profile to a host-side, git-ignored
+    # See docs/adr/0003: bin/cc-sandbox resolves --profile to a host-side, git-ignored
     # file (or /dev/null when no profile is given) and points this at it. The
     # :-/dev/null default keeps `docker compose config`/`up` runnable directly
-    # (e.g. for manual validation) without going through bin/sandbox.
+    # (e.g. for manual validation) without going through bin/cc-sandbox.
     env_file:
-      - ${SANDBOX_ENV_FILE:-/dev/null}
+      - ${CC_SANDBOX_ENV_FILE:-/dev/null}
     # DinD sidecar (ticket 05): points the container's `docker` CLI at the nested
     # daemon in the `dind` service instead of a local one. isolate.sh exempts the
     # `dind` service's address from the isolation rules below so this keeps working
@@ -32,50 +32,50 @@ services:
       # than left to compose's default `<project>_<key>` scheme, so every sandbox
       # instance -- regardless of its own -p project name -- mounts the exact same
       # volumes and benefits from work already done by other instances. `down`
-      # (bin/sandbox never passes -v) leaves them in place.
-      - sandbox-cache-mise:/home/dev/.local/share/mise
-      - sandbox-cache-uv:/home/dev/.cache/uv
-      - sandbox-cache-npm:/home/dev/.npm
-      - sandbox-cache-m2:/home/dev/.m2
-      - sandbox-cache-playwright:/home/dev/.cache/ms-playwright
+      # (bin/cc-sandbox never passes -v) leaves them in place.
+      - cc-sandbox-cache-mise:/home/dev/.local/share/mise
+      - cc-sandbox-cache-uv:/home/dev/.cache/uv
+      - cc-sandbox-cache-npm:/home/dev/.npm
+      - cc-sandbox-cache-m2:/home/dev/.m2
+      - cc-sandbox-cache-playwright:/home/dev/.cache/ms-playwright
     working_dir: /workspace
     command: ["sleep", "infinity"]
 
   # DinD sidecar (ticket 05, ADR-0001): a privileged `docker:dind` container gives
   # the sandbox service a nested Docker daemon for `docker run`/Testcontainers,
   # without exposing the host's own daemon. It shares this compose project's
-  # network with `sandbox`, so it's subject to the same 172.16.0.0/12-etc. block
+  # network with `cc-sandbox`, so it's subject to the same 172.16.0.0/12-etc. block
   # in isolate.sh -- see the exemption there -- and its own nested containers get
-  # isolated in turn by isolate-forward.sh (see bin/sandbox's
+  # isolated in turn by isolate-forward.sh (see bin/cc-sandbox's
   # apply_dind_network_isolation).
   dind:
     image: docker:28-dind
     privileged: true
     environment:
-      # Disables TLS so `sandbox` can reach it over plain tcp://dind:2375. Nothing
+      # Disables TLS so `cc-sandbox` can reach it over plain tcp://dind:2375. Nothing
       # *outside* this compose network can reach this port at all (ADR-0001), and
-      # `sandbox` reaching it is the intended, deliberately-exempted path (see
+      # `cc-sandbox` reaching it is the intended, deliberately-exempted path (see
       # isolate.sh's dind_ip) rather than something this setting needs to guard
       # against -- the dev user having full control of this daemon is exactly what
       # the ticket asks for, the same way it already has passwordless sudo.
       - DOCKER_TLS_CERTDIR=
     # Mirrors sandbox/isolate.sh's approach: rather than baking the isolation
     # script into a custom dind image, mount it into the stock image and have
-    # bin/sandbox `docker exec` it once the daemon is up. blocked-ranges.sh is
+    # bin/cc-sandbox `docker exec` it once the daemon is up. blocked-ranges.sh is
     # mounted at the same path the sandbox image's Dockerfile COPYs it to, so
     # isolate-forward.sh can source it identically to isolate.sh.
     volumes:
-      - ./isolate-forward.sh:/usr/local/sbin/sandbox-isolate-forward:ro
-      - ./blocked-ranges.sh:/usr/local/sbin/sandbox-blocked-ranges:ro
+      - ./isolate-forward.sh:/usr/local/sbin/cc-sandbox-isolate-forward:ro
+      - ./blocked-ranges.sh:/usr/local/sbin/cc-sandbox-blocked-ranges:ro
       # Docker image-layer cache (ticket 07), with a per-instance fallback: sharing
       # this directory between two *concurrently running* dind sidecars doesn't
       # work -- dockerd's containerd metadata store takes an exclusive lock on its
       # data-root, so a second dind pointed at an already-in-use copy of this volume
       # just hangs on startup instead of coming up (found in review; verified
-      # directly against two real docker:28-dind containers). So bin/sandbox only
-      # points DIND_CACHE_VOLUME at the globally-shared sandbox-cache-docker-layers
+      # directly against two real docker:28-dind containers). So bin/cc-sandbox only
+      # points DIND_CACHE_VOLUME at the globally-shared cc-sandbox-cache-docker-layers
       # volume when no other running instance currently holds it (see
-      # dind_cache_volume_in_use_by_other_project in bin/sandbox); otherwise it
+      # dind_cache_volume_in_use_by_other_project in bin/cc-sandbox); otherwise it
       # falls back to a volume scoped to this instance's project name, which is
       # still a real named volume (persists across *this* instance's own down/up)
       # rather than an ephemeral one. `dind-cache` below is a fixed compose-local
@@ -85,15 +85,15 @@ services:
       - dind-cache:/var/lib/docker
 
 volumes:
-  sandbox-cache-mise:
-    name: sandbox-cache-mise
-  sandbox-cache-uv:
-    name: sandbox-cache-uv
-  sandbox-cache-npm:
-    name: sandbox-cache-npm
-  sandbox-cache-m2:
-    name: sandbox-cache-m2
-  sandbox-cache-playwright:
-    name: sandbox-cache-playwright
+  cc-sandbox-cache-mise:
+    name: cc-sandbox-cache-mise
+  cc-sandbox-cache-uv:
+    name: cc-sandbox-cache-uv
+  cc-sandbox-cache-npm:
+    name: cc-sandbox-cache-npm
+  cc-sandbox-cache-m2:
+    name: cc-sandbox-cache-m2
+  cc-sandbox-cache-playwright:
+    name: cc-sandbox-cache-playwright
   dind-cache:
-    name: ${DIND_CACHE_VOLUME:-sandbox-cache-docker-layers}
+    name: ${DIND_CACHE_VOLUME:-cc-sandbox-cache-docker-layers}

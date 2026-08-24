@@ -1,25 +1,25 @@
 #!/usr/bin/env bats
 #
 # E2E tests for Playwright MCP server integration (ticket 10). The public seam
-# is bin/sandbox: tests start a real sandbox instance, then observe the MCP
+# is bin/cc-sandbox: tests start a real sandbox instance, then observe the MCP
 # server Claude Code sees and the browser behavior it exposes. No project-level
 # .mcp.json or mocked Docker/MCP components are used.
 
 load helpers
 
 setup_file() {
-  export SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/sandbox"
+  export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
   export PROJECT_DIR
   PROJECT_DIR="$(cd "$(mktemp -d)" && pwd -P)"
 }
 
 teardown_file() {
-  "$SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
+  "$CC_SANDBOX_BIN" down "$PROJECT_DIR" >/dev/null 2>&1 || true
   rm -rf "$PROJECT_DIR"
 }
 
 @test "up provides Playwright MCP in Claude Code's user scope without project configuration" {
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
 
   run exec_in "test ! -e /workspace/.mcp.json && claude mcp get playwright"
@@ -49,9 +49,9 @@ teardown_file() {
   [ -n "$browser_path" ]
   exec_in_container "$cid" "printf reused > /home/dev/.cache/ms-playwright/ticket-10-marker"
 
-  run "$SANDBOX_BIN" down "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" down "$PROJECT_DIR"
   [ "$status" -eq 0 ]
-  run "$SANDBOX_BIN" up "$PROJECT_DIR"
+  run "$CC_SANDBOX_BIN" up "$PROJECT_DIR"
   [ "$status" -eq 0 ]
 
   run exec_in "cat /home/dev/.cache/ms-playwright/ticket-10-marker"
