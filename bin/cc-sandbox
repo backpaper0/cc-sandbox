@@ -21,7 +21,9 @@ Usage:
         variables into the container so Claude Code is authenticated without an
         interactive login. <name> may be any string of letters, digits, '-', and
         '_' -- there's no fixed set of profiles, so you can keep one per client
-        or engagement rather than just "private"/"work".
+        or engagement rather than just "private"/"work". Pass --profile with no
+        name (or --profile= with nothing after the '=') to pick one
+        interactively from ~/.cc-sandbox/env.* instead (see docs/adr/0006).
         --name gives the instance an explicit slug, so multiple instances (e.g. of
         the same or different project dirs) can run side by side (see ticket 06).
         Without --name, the instance is named after <project-dir> as before.
@@ -64,6 +66,69 @@ resolve_profile_env_file() {
     exit 1
   fi
   echo "${path}"
+}
+
+# Prompts the user to pick a profile from ~/.cc-sandbox/env.* when --profile is
+# given without a name (see docs/adr/0006-interactive-profile-selection.md).
+# Only lists names that pass the same charset check resolve_profile_env_file
+# enforces, so whatever gets picked here is guaranteed to also resolve there.
+# Prints the chosen name on stdout (for the caller to capture); everything
+# else, including the confirmation echo, goes to stderr so it doesn't pollute
+# that capture.
+select_profile_interactive() {
+  if [[ -z "${HOME:-}" ]]; then
+    echo "error: \$HOME is not set; cannot list profiles" >&2
+    exit 1
+  fi
+  # Fails closed rather than silently falling back to no profile: a non-interactive
+  # caller (CI, a script) that hits this has almost certainly made a mistake, and
+  # the sandbox coming up unauthenticated would be a confusing failure to debug.
+  if [[ ! -t 0 ]]; then
+    echo "error: --profile needs a name in a non-interactive shell (got none to prompt for)" >&2
+    exit 1
+  fi
+
+  local dir="${HOME}/.cc-sandbox"
+  local -a profiles=()
+  local path base
+  shopt -s nullglob
+  for path in "${dir}"/env.*; do
+    base="${path##*/env.}"
+    if [[ "${base}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      profiles+=("${base}")
+    fi
+  done
+  shopt -u nullglob
+
+  if [[ "${#profiles[@]}" -eq 0 ]]; then
+    echo "error: no profiles found under ${dir}/env.*" >&2
+    echo "Create one before using --profile without a name." >&2
+    exit 1
+  fi
+
+  local sorted
+  sorted="$(printf '%s\n' "${profiles[@]}" | sort)"
+  profiles=()
+  while IFS= read -r base; do
+    profiles+=("${base}")
+  done <<<"${sorted}"
+
+  # A single attempt only: an out-of-range number, a blank Enter, and Ctrl-D/EOF
+  # (which skips the loop body entirely, leaving `chosen` unset) all fall through
+  # to the same "cancelled" error below rather than re-prompting forever.
+  local chosen=""
+  PS3="Select a profile: "
+  select chosen in "${profiles[@]}"; do
+    break
+  done
+
+  if [[ -z "${chosen}" ]]; then
+    echo "error: profile selection cancelled" >&2
+    exit 1
+  fi
+
+  echo "Using profile: ${chosen}" >&2
+  echo "${chosen}"
 }
 
 # Shared by slugify() and sanitize_name() below, so the charset a compose project
@@ -296,22 +361,33 @@ cmd_up() {
   local project_dir=""
   local profile=""
   local profile_given=false
+  local profile_interactive=false
   local name=""
   local name_given=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --profile)
-        if [[ $# -lt 2 ]]; then
-          echo "error: --profile requires an argument" >&2
-          exit 1
+        # A missing value (end of args, or the next token looking like another
+        # flag) means "let me pick one interactively" rather than an error --
+        # see docs/adr/0006-interactive-profile-selection.md. A profile name
+        # that happens to start with '-' still works via --profile=-name.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          profile=""
+          profile_given=true
+          profile_interactive=true
+          shift
+        else
+          profile="$2"
+          profile_given=true
+          shift 2
         fi
-        profile="$2"
-        profile_given=true
-        shift 2
         ;;
       --profile=*)
         profile="${1#--profile=}"
         profile_given=true
+        if [[ -z "${profile}" ]]; then
+          profile_interactive=true
+        fi
         shift
         ;;
       --name)
@@ -348,6 +424,13 @@ cmd_up() {
     echo "error: 'up' requires a project directory" >&2
     usage >&2
     exit 1
+  fi
+
+  # Deferred until argument parsing/validation is fully done, so an unrelated
+  # mistake elsewhere on the command line (a missing project-dir, an unknown
+  # flag) fails fast instead of prompting the user first and then failing anyway.
+  if [[ "${profile_interactive}" == true ]]; then
+    profile="$(select_profile_interactive)" || exit 1
   fi
 
   project_dir="$(cd "${project_dir}" && pwd -P)"

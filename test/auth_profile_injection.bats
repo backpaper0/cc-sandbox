@@ -109,12 +109,24 @@ sandbox_up_with_home() {
   rm -rf "$empty_home"
 }
 
-@test "up --profile with an empty value fails clearly instead of silently skipping injection" {
+@test "up --profile with an explicit empty value fails clearly instead of silently skipping injection" {
   run sandbox_up_with_home "$FAKE_HOME" --profile ""
   [ "$status" -ne 0 ]
   [[ "$output" == *"non-empty"* ]]
+}
+
+# --profile with no name (or --profile= with nothing after it) means "prompt me
+# interactively" (see docs/adr/0006-interactive-profile-selection.md), not an
+# error -- but bats runs commands with no controlling TTY, so what's actually
+# observable here is the non-interactive-shell guard, not the prompt itself.
+# ADR-0006 explains why picking a profile without a TTY fails clearly instead
+# of silently skipping injection.
+@test "up --profile with no name fails clearly in a non-interactive shell" {
+  run sandbox_up_with_home "$FAKE_HOME" --profile
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"non-interactive shell"* ]]
 
   run sandbox_up_with_home "$FAKE_HOME" --profile=
   [ "$status" -ne 0 ]
-  [[ "$output" == *"non-empty"* ]]
+  [[ "$output" == *"non-interactive shell"* ]]
 }
