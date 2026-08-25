@@ -834,7 +834,10 @@ resolve_running_instance() {
 
   if [[ -n "${project_dir}" ]]; then
     local resolved_dir
-    resolved_dir="$(cd "${project_dir}" && pwd -P)"
+    if ! resolved_dir="$(cd "${project_dir}" 2>/dev/null && pwd -P)"; then
+      echo "error: no such directory: ${project_dir}" >&2
+      return 1
+    fi
     compose_project_name "${resolved_dir}"
     return
   fi
