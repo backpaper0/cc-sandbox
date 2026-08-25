@@ -67,6 +67,28 @@ AWS_REGION=us-east-1
 
 どんな名前のプロファイルを作ったか忘れてしまった場合は、`--profile` に値を渡さずに実行すると（`--profile` を末尾に置く、`--profile=` の後を空にするなど）、`~/.cc-sandbox/env.*` から見つかった名前を一覧表示し、対話的に選択できます（詳細は [ADR-0006](docs/adr/0006-interactive-profile-selection.md)）。候補が0件、非TTY環境、選択のキャンセルはいずれもエラー終了します。
 
+## セットアップ：企業CA証明書・プロキシ
+
+企業ネットワークのTLS/SSL Inspection配下で使う場合、以下の2ファイルを置いておくとフラグなしで自動的に適用されます（詳細は [ADR-0007](docs/adr/0007-corporate-ca-and-proxy-per-host-file.md)）。`--profile` とは独立しており、同じホスト上で複数プロファイルを使い分けても設定は1箇所で済みます。
+
+`~/.cc-sandbox/ca-cert.crt`（企業CA証明書、PEM1枚）:
+
+```sh
+cp /path/to/corporate-ca.pem ~/.cc-sandbox/ca-cert.crt
+```
+
+ビルド時に本体コンテナのシステムCA一式へマージされ、実行時にDinDサイドカーにも同じ証明書がインストールされます。mise管理のJDKには例外対応として、コンテナ起動のたびに専用のJavaトラストストアが生成されます。
+
+`~/.cc-sandbox/proxy.env`（`HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`）:
+
+```sh
+HTTP_PROXY=http://proxy.example.com:8080
+HTTPS_PROXY=http://proxy.example.com:8080
+NO_PROXY=localhost,127.0.0.1,.internal.example.com
+```
+
+本体コンテナ・DinDサイドカーの両方に注入され、イメージビルド時のパッケージ取得（BuildKitの自動プロキシ伝播）にも使われます。どちらのファイルも存在しなければ何も変わりません。
+
 ## 使い方
 
 ```

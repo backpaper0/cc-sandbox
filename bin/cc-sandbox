@@ -9,6 +9,13 @@ COMPOSE_FILE="${CC_SANDBOX_ROOT}/sandbox/docker-compose.yml"
 # user whose traffic the isolation rules apply to.
 SANDBOX_USER=dev
 
+# Fixed, .gitignore'd path inside the build context (ticket 12, ADR-0007) that
+# sandbox/Dockerfile's COPY reads the corporate CA certificate from at build
+# time, and that docker-compose.yml's dind service bind-mounts at run time --
+# staged fresh from ~/.cc-sandbox/ca-cert.crt on every `up` so both consumers
+# see the exact same bytes from a single copy step.
+CA_CERT_DEST="${CC_SANDBOX_ROOT}/sandbox/ca-cert.crt"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -27,6 +34,9 @@ Usage:
         --name gives the instance an explicit slug, so multiple instances (e.g. of
         the same or different project dirs) can run side by side (see ticket 06).
         Without --name, the instance is named after <project-dir> as before.
+        If ~/.cc-sandbox/ca-cert.crt and/or ~/.cc-sandbox/proxy.env exist, they are
+        picked up automatically (no flag needed) and applied to both the main
+        container and the DinD sidecar (see docs/adr/0007).
   down  Tear down a sandbox instance, identified by <project-dir> or by --name
         (whichever the matching 'up' used). If neither is given, the single
         running instance (if there is exactly one) is torn down.
@@ -238,32 +248,102 @@ check_name_not_in_use_by_other_dir() {
   fi
 }
 
-# Serializes check_name_not_in_use_by_other_dir's check-then-act sequence (and the
-# `compose up` that follows it) against another concurrent `up --name` claiming the
-# *same* brand-new name: without this, two `up --name shared` invocations racing
-# against each other can both see "not in use yet" before either has created a
-# container, both pass the guard, and the second `compose up -d --build` silently
-# recreates/clobbers the first's container (found in review). `mkdir` is atomic on
-# POSIX filesystems, unlike a check-then-create on a plain file, so only one
-# concurrent invocation can hold this lock for a given project name at a time. The
-# trap releases it on the *script's* exit (success or failure), which is also when
-# `up` has either finished creating the container or given up -- i.e. for exactly
-# as long as the race window is open.
-acquire_name_lock() {
-  local project_name="$1"
-  local lock_dir="${TMPDIR:-/tmp}/sandbox-lock-${project_name}"
+# Lock directories currently held by this invocation, released together by
+# release_acquired_locks -- bash only supports one EXIT trap at a time, so every
+# lock acquire_lock hands out has to share it rather than each registering its
+# own (a second `trap ... EXIT` would silently replace the first, found in
+# review while fixing the CA-cert race below).
+ACQUIRED_LOCKS=()
+
+release_acquired_locks() {
+  local dir
+  for dir in "${ACQUIRED_LOCKS[@]}"; do
+    rmdir "${dir}" 2>/dev/null || true
+  done
+}
+
+# Generic mkdir-based lock: acquires "${TMPDIR:-/tmp}/sandbox-lock-<name>",
+# waiting up to 30s, and registers it in ACQUIRED_LOCKS for release via
+# release_acquired_locks on the script's exit (success or failure) -- i.e. for
+# exactly as long as the invocation that acquired it is still running. `mkdir`
+# is atomic on POSIX filesystems, unlike a check-then-create on a plain file, so
+# only one concurrent invocation can hold a given lock name at a time.
+acquire_lock() {
+  local name="$1"
+  local label="$2"
+  local lock_dir="${TMPDIR:-/tmp}/sandbox-lock-${name}"
   local waited=0
   while ! mkdir "${lock_dir}" 2>/dev/null; do
     sleep 0.2
     waited=$((waited + 1))
     if [[ "${waited}" -gt 150 ]]; then
-      echo "error: timed out waiting for another 'bin/cc-sandbox up --name ${project_name#cc-sandbox-}' to finish" >&2
+      echo "error: timed out waiting for another '${label}' to finish" >&2
       exit 1
     fi
   done
-  # lock_dir must expand now, not when the trap fires.
-  # shellcheck disable=SC2064
-  trap "rmdir '${lock_dir}' 2>/dev/null || true" EXIT
+  ACQUIRED_LOCKS+=("${lock_dir}")
+  trap release_acquired_locks EXIT
+}
+
+# Serializes check_name_not_in_use_by_other_dir's check-then-act sequence (and the
+# `compose up` that follows it) against another concurrent `up --name` claiming the
+# *same* brand-new name: without this, two `up --name shared` invocations racing
+# against each other can both see "not in use yet" before either has created a
+# container, both pass the guard, and the second `compose up -d --build` silently
+# recreates/clobbers the first's container (found in review).
+acquire_name_lock() {
+  local project_name="$1"
+  acquire_lock "${project_name}" "bin/cc-sandbox up --name ${project_name#cc-sandbox-}"
+}
+
+# Stages ~/.cc-sandbox/ca-cert.crt (if present) into the build context at
+# CA_CERT_DEST (ticket 12, ADR-0007) so sandbox/Dockerfile's COPY and
+# docker-compose.yml's dind bind mount both pick it up. Also removes any stale
+# copy left by a previous `up` when the host no longer has one -- otherwise a
+# deleted corporate CA would keep getting baked into fresh builds silently.
+#
+# CA_CERT_DEST is a single path shared by every instance's build regardless of
+# --name, so callers must hold the "ca-cert-build" lock (see acquire_lock) for
+# as long as this file's content matters -- from this call through the
+# `compose ... build` that reads it -- otherwise two concurrent `up`s (ticket
+# 06) can race and one instance's image gets built with the wrong CA (found in
+# review).
+stage_ca_certificate() {
+  local src="${HOME:-}/.cc-sandbox/ca-cert.crt"
+  if [[ -n "${HOME:-}" && -f "${src}" ]]; then
+    cp "${src}" "${CA_CERT_DEST}"
+  else
+    rm -f "${CA_CERT_DEST}"
+  fi
+}
+
+# Loads ~/.cc-sandbox/proxy.env (if present) into this shell's own environment
+# (ticket 12, ADR-0007), so its HTTP_PROXY/HTTPS_PROXY/NO_PROXY reach BuildKit's
+# automatic proxy-arg propagation at `compose build`, and so docker-compose.yml
+# can interpolate them into the dind service's `environment:` at `compose up`.
+# Also sets CC_SANDBOX_PROXY_ENV_FILE (for the cc-sandbox service's own
+# env_file, see docker-compose.yml) and CC_SANDBOX_NO_PROXY. A missing file is
+# not an error -- unlike --profile, a proxy is a property of the host machine,
+# not something explicitly requested per invocation.
+#
+# CC_SANDBOX_NO_PROXY (NO_PROXY plus "dind") overrides the cc-sandbox service's
+# own NO_PROXY in docker-compose.yml, not the dind service's: it's the `docker`
+# CLI running *inside* cc-sandbox (DOCKER_HOST=tcp://dind:2375) that honors
+# HTTP_PROXY/HTTPS_PROXY for that connection, so without "dind" in *its*
+# NO_PROXY a configured proxy would try to tunnel the sandbox<->DinD control
+# connection through itself and break docker/Testcontainers entirely whenever a
+# proxy is set (found in review).
+load_proxy_env() {
+  export CC_SANDBOX_PROXY_ENV_FILE="/dev/null"
+  local path="${HOME:-}/.cc-sandbox/proxy.env"
+  if [[ -n "${HOME:-}" && -f "${path}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${path}"
+    set +a
+    export CC_SANDBOX_PROXY_ENV_FILE="${path}"
+  fi
+  export CC_SANDBOX_NO_PROXY="${NO_PROXY:-}${NO_PROXY:+,}dind,localhost,127.0.0.1"
 }
 
 # Applies the isolation rules from inside the container, as root
@@ -304,6 +384,25 @@ apply_dind_network_isolation() {
     return 1
   fi
   docker exec -u root "${dind_container_id}" sh /usr/local/sbin/cc-sandbox-isolate-forward
+}
+
+# Installs the corporate CA certificate into the DinD sidecar (ticket 12,
+# ADR-0007), the same docker-exec-as-root pattern
+# apply_network_isolation/apply_dind_network_isolation use. docker-compose.yml
+# bind-mounts CC_SANDBOX_CA_CERT_FILE (or /dev/null) into the sidecar's
+# ca-certificates.d, so this just has to trigger Alpine's
+# update-ca-certificates -- skipped entirely when there's nothing to install.
+apply_dind_ca_certificate() {
+  local project_name="$1"
+  if [[ "${CC_SANDBOX_CA_CERT_FILE}" == "/dev/null" ]]; then
+    return 0
+  fi
+  local dind_container_id
+  dind_container_id="$(compose "${project_name}" ps -q dind)"
+  if [[ -z "${dind_container_id}" ]]; then
+    return 1
+  fi
+  docker exec -u root "${dind_container_id}" update-ca-certificates
 }
 
 # Shared by wait_for_dind/wait_for_code_server below: both are "poll a readiness
@@ -466,6 +565,19 @@ cmd_up() {
   fi
   export DIND_CACHE_VOLUME="${dind_cache_volume}"
 
+  # ticket 12 / ADR-0007: corporate CA certificate and proxy settings are a
+  # property of the host machine, not something explicit like --profile, so both
+  # are picked up automatically when present rather than requiring a flag.
+  # acquire_lock guards CA_CERT_DEST (shared by every instance's build) against
+  # a concurrent `up`'s own build reading it mid-write -- see stage_ca_certificate.
+  acquire_lock "ca-cert-build" "bin/cc-sandbox up"
+  stage_ca_certificate
+  export CC_SANDBOX_CA_CERT_FILE="/dev/null"
+  if [[ -f "${CA_CERT_DEST}" ]]; then
+    export CC_SANDBOX_CA_CERT_FILE="${CA_CERT_DEST}"
+  fi
+  load_proxy_env
+
   compose "${project_name}" up -d --build
 
   local container_id
@@ -501,6 +613,12 @@ cmd_up() {
 
   if ! apply_dind_network_isolation "${project_name}"; then
     echo "error: failed to apply network isolation for the DinD sidecar in '${project_name}'; tearing down" >&2
+    compose "${project_name}" down >/dev/null 2>&1 || true
+    exit 1
+  fi
+
+  if ! apply_dind_ca_certificate "${project_name}"; then
+    echo "error: failed to install the corporate CA certificate in the DinD sidecar for '${project_name}'; tearing down" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi

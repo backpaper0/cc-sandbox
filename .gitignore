@@ -1,0 +1,4 @@
+# Staged here by bin/cc-sandbox on every `up` from ~/.cc-sandbox/ca-cert.crt
+# (ticket 12, ADR-0007) so sandbox/Dockerfile can COPY it during `compose build`.
+# Never committed: it's a copy of a host-local secret file.
+/sandbox/ca-cert.crt

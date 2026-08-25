@@ -10,14 +10,27 @@ services:
     # file (or /dev/null when no profile is given) and points this at it. The
     # :-/dev/null default keeps `docker compose config`/`up` runnable directly
     # (e.g. for manual validation) without going through bin/cc-sandbox.
+    #
+    # The second entry (ticket 12, ADR-0007) injects ~/.cc-sandbox/proxy.env the
+    # same way, independently of --profile -- whether a proxy is needed depends
+    # on which host machine this is, not which auth profile was picked.
     env_file:
       - ${CC_SANDBOX_ENV_FILE:-/dev/null}
+      - ${CC_SANDBOX_PROXY_ENV_FILE:-/dev/null}
     # DinD sidecar (ticket 05): points the container's `docker` CLI at the nested
     # daemon in the `dind` service instead of a local one. isolate.sh exempts the
     # `dind` service's address from the isolation rules below so this keeps working
     # once they're applied.
+    #
+    # NO_PROXY (ticket 12 / ADR-0007) overrides whatever raw value env_file's
+    # proxy.env set above: the `docker` CLI here honors HTTP_PROXY/HTTPS_PROXY for
+    # its own DOCKER_HOST connection, so without "dind" specifically exempted a
+    # configured proxy would try to tunnel that connection through itself instead
+    # of reaching the sidecar directly (found in review). CC_SANDBOX_NO_PROXY is
+    # set by bin/cc-sandbox's load_proxy_env.
     environment:
       - DOCKER_HOST=tcp://dind:2375
+      - NO_PROXY=${CC_SANDBOX_NO_PROXY:-}
     depends_on:
       - dind
     # code-server (ticket 04): loopback-only + random host port, per the spec's
@@ -59,6 +72,14 @@ services:
       # against -- the dev user having full control of this daemon is exactly what
       # the ticket asks for, the same way it already has passwordless sudo.
       - DOCKER_TLS_CERTDIR=
+      # Ticket 12 / ADR-0007: proxy settings from ~/.cc-sandbox/proxy.env, forwarded
+      # here since this sidecar's own `environment:` doesn't pick up the
+      # cc-sandbox service's env_file. Passed through unmodified -- unlike the
+      # cc-sandbox service's NO_PROXY above, this dockerd has no reason to talk
+      # to itself through a proxy, so no exemption is needed here.
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
     # Mirrors sandbox/isolate.sh's approach: rather than baking the isolation
     # script into a custom dind image, mount it into the stock image and have
     # bin/cc-sandbox `docker exec` it once the daemon is up. blocked-ranges.sh is
@@ -67,6 +88,13 @@ services:
     volumes:
       - ./isolate-forward.sh:/usr/local/sbin/cc-sandbox-isolate-forward:ro
       - ./blocked-ranges.sh:/usr/local/sbin/cc-sandbox-blocked-ranges:ro
+      # Corporate CA certificate (ticket 12, ADR-0007): the same file
+      # bin/cc-sandbox stages into the main image's build context (see
+      # sandbox/Dockerfile), bind-mounted here too so
+      # apply_dind_ca_certificate's `update-ca-certificates` has something to
+      # pick up. :-/dev/null mirrors the env_file default above -- an empty
+      # mount is a harmless no-op for update-ca-certificates.
+      - ${CC_SANDBOX_CA_CERT_FILE:-/dev/null}:/usr/local/share/ca-certificates/cc-sandbox-ca.crt:ro
       # Docker image-layer cache (ticket 07), with a per-instance fallback: sharing
       # this directory between two *concurrently running* dind sidecars doesn't
       # work -- dockerd's containerd metadata store takes an exclusive lock on its

@@ -23,6 +23,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       docker.io \
     && rm -rf /var/lib/apt/lists/*
 
+# Corporate CA certificate (ticket 12, ADR-0007): bin/cc-sandbox stages
+# ~/.cc-sandbox/ca-cert.crt (if present) at this fixed, .gitignore'd path inside
+# the build context before every `compose build`. The bracket glob makes the
+# COPY a no-op when that file is absent, and the -s check below skips
+# update-ca-certificates when it's present but empty. Placed before every later
+# RUN step that talks to the network (code-server/mise/uv/npm installs below),
+# so those also trust the merged bundle it produces.
+COPY ca-cert.cr[t] /usr/local/share/ca-certificates/cc-sandbox-ca.crt
+RUN [ -s /usr/local/share/ca-certificates/cc-sandbox-ca.crt ] && update-ca-certificates || true
+
+# update-ca-certificates above only makes OpenSSL-based tools (curl, git) trust
+# the merged bundle -- they already default to /etc/ssl/certs/ca-certificates.crt
+# without any of this. Node (npm) and Python's requests/pip ship their own
+# bundled CA list and ignore the OS trust store entirely, so without these they
+# still fail TLS verification under SSL inspection (found in review -- this
+# broke the very `npm install -g` a few layers down). Set unconditionally
+# (always exists, corporate CA merged in or not) rather than only when a
+# corporate CA is present, since pointing at the same file tools already
+# default to is a no-op either way.
+ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
 # Network isolation runs inside the container (see docs/adr/0004); `bin/cc-sandbox up`
 # invokes this as root once the container is running. blocked-ranges.sh is shared
 # with sandbox/isolate-forward.sh (the DinD sidecar's own isolation, ticket 05),
