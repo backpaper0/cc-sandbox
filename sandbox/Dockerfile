@@ -126,6 +126,15 @@ RUN sudo env PATH="${PATH}" "$(npm prefix -g)/bin/playwright" install-deps chrom
 # write into it.
 RUN mkdir -p "${HOME}/.cache/uv" "${HOME}/.npm" "${HOME}/.m2" "${HOME}/.cache/ms-playwright"
 
+# Narrow dev's sudo to package management only, now that every build step
+# needing broader root access (playwright install-deps above) has already run
+# (ADR-0008). Kept unrestricted up to this point rather than narrowed at
+# useradd time: `sudo env PATH=... playwright install-deps` above invokes
+# /usr/bin/env, not apt-get/apt directly, so narrowing any earlier would break
+# the build.
+RUN echo "${USERNAME} ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt" | sudo tee "/etc/sudoers.d/${USERNAME}" \
+    && sudo chmod 0440 "/etc/sudoers.d/${USERNAME}"
+
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/cc-sandbox-entrypoint"]
 CMD ["sleep", "infinity"]

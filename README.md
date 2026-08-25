@@ -190,7 +190,7 @@ cc-sandbox down                     # 動いているインスタンスが1つ�
 | code-server | エントリポイントでバックグラウンド起動 |
 | Vim / git / build-essential / docker CLI | |
 
-作業ユーザーは非 root の `dev` で、パスワードなしの無制限 `sudo` が使えます。`docker` CLI は `DOCKER_HOST=tcp://dind:2375` 経由で DinD サイドカーのネストされた Docker デーモンを向いており、ホストの Docker デーモンには到達しません。
+作業ユーザーは非 root の `dev` で、`apt-get`/`apt` に限りパスワードなしの `sudo` が使えます（[ADR-0008](docs/adr/0008-restrict-dev-sudo-to-package-management.md)）。`dev` にパスワードは設定されていないため、それ以外のコマンドへの `sudo` は実行できません。`docker` CLI は `DOCKER_HOST=tcp://dind:2375` 経由で DinD サイドカーのネストされた Docker デーモンを向いており、ホストの Docker デーモンには到達しません。
 
 ## 隔離の仕組み
 
@@ -198,7 +198,7 @@ cc-sandbox down                     # 動いているインスタンスが1つ�
 
 **ネットワーク**（[ADR-0004](docs/adr/0004-network-isolation-in-container-owner-match.md)）: コンテナ内部の iptables に、`dev` ユーザー（owner match）からホスト側アドレスへの新規接続を REJECT するルールを入れます。対象は RFC1918、リンクローカル `169.254.0.0/16`、CGNAT `100.64.0.0/10`、および実行時に解決した `host.docker.internal` のアドレスです（[sandbox/blocked-ranges.sh](sandbox/blocked-ranges.sh)）。ホスト側の iptables を触らないため、Linux ネイティブでも macOS の VM 経由の Docker でも同じコードパスで動き、`down` 時に後始末すべきルールも残りません。DinD サイドカー内で起動したコンテナにも、FORWARD チェーンに同等のルールを入れて同じ制約をかけます。
 
-この隔離は「事故の防止」であって「脱出の防止」ではありません。`dev` は無制限の sudo を持つため、root になれば自分でルールを外せます。この割り切りは ADR-0004 で明示的に受け入れたものです。
+この隔離は「事故の防止」であって「脱出の防止」ではありません。`dev` の `sudo` はパッケージ管理コマンドのみに絞られていますが（[ADR-0008](docs/adr/0008-restrict-dev-sudo-to-package-management.md)）、`apt-get install` のインストールフックは root 権限で任意コード実行が可能なため、意図的にそれを悪用すればルールを外せます。この割り切りは ADR-0004 で明示的に受け入れたものです。
 
 **code-server**: コンテナ内では `0.0.0.0:8080` にバインドしますが、ホスト側への公開は `127.0.0.1` のランダムポートに限定され、パスワード認証（初回起動時に自動生成）が必須です。
 
@@ -226,6 +226,6 @@ bin/test-e2e
 ## 既知の制約
 
 - macOS（OrbStack / Docker Desktop）での `host.docker.internal` 迂回経路は、ルールとしては塞いでいるものの実機での検証は未実施です。受け入れの基準となるプラットフォームは WSL2 / Linux ネイティブ Docker です。
-- 本体コンテナ内の root（および sudo 経由の `dev`）は隔離ルールを解除できます。悪意ある脱出への防御ではありません。
+- 本体コンテナ内の root は隔離ルールを解除できます。`dev` も `apt-get install` のインストールフックを悪用すれば同様のことが可能です（[ADR-0008](docs/adr/0008-restrict-dev-sudo-to-package-management.md)）。悪意ある脱出への防御ではありません。
 - IPv6 は対象外です（現状これらのコンテナに IPv6 アドレスとルートが割り当てられないため）。
 - CI/CD 連携、監視・ロギング基盤、sysbox / rootless Docker への移行はスコープ外です。

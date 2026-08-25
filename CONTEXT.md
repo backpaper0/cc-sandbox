@@ -21,7 +21,7 @@ _Avoid_: ブラウザ自動化, E2Eテストツール（Playwright MCPサーバ�
 _Avoid_: セッション, ワークスペース
 
 **本体コンテナ**:
-サンドボックスインスタンスの中心となるコンテナ。Claude Code・開発ツール一式・code-serverが動き、非rootユーザーを起点にsudoが無制限で使える。
+サンドボックスインスタンスの中心となるコンテナ。Claude Code・開発ツール一式・code-serverが動き、非rootユーザーを起点に、OSパッケージ管理コマンド（`apt-get`/`apt`）に限りパスワードなしでsudoが使える（[ADR-0008](docs/adr/0008-restrict-dev-sudo-to-package-management.md)）。
 _Avoid_: メインコンテナ, アプリコンテナ
 
 **claudeラッパー**:

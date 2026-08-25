@@ -59,10 +59,14 @@ teardown_file() {
   [ "$output" = "dev" ]
 }
 
-@test "dev user has passwordless sudo" {
-  run exec_in "sudo -n whoami"
+@test "dev user has passwordless sudo for package management only" {
+  run exec_in "sudo -n apt-get --version"
   [ "$status" -eq 0 ]
-  [ "$output" = "root" ]
+
+  # Anything outside the allowlist (ADR-0008) has no password to fall back on,
+  # so it fails rather than prompting.
+  run exec_in "sudo -n whoami"
+  [ "$status" -ne 0 ]
 }
 
 @test "down removes the container and compose resources" {
