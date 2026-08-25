@@ -37,8 +37,16 @@ _Avoid_: ネストDocker, Docker-in-Docker（説明文中ではこの一般名�
 _Avoid_: ローカル環境, マシン
 
 **`~/.cc-sandbox`**:
-ホスト側にある、cc-sandboxのローカル状態を置くディレクトリ（Git管理外）。認証プロファイル（`env.<name>`、[ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）と、`install.sh`がcloneするリポジトリ本体（`src/`）の両方をこの下に置く。
+ホスト側にある、cc-sandboxのローカル状態を置くディレクトリ（Git管理外）。認証プロファイル（`env.<name>`、[ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）、企業CA証明書・`proxy.env`（後述、[ADR-0007](docs/adr/0007-corporate-ca-and-proxy-per-host-file.md)）、`install.sh`がcloneするリポジトリ本体（`src/`）をこの下に置く。
 _Avoid_: 設定ディレクトリ（何の設定か曖昧なので`~/.cc-sandbox`と明示する）
+
+**企業CA証明書**:
+企業ネットワークのTLS/SSL Inspection（セキュリティ監査・脅威検知・DLP目的の中間者検査）にサンドボックスが対応するための、PEM形式の証明書1枚。ホスト側の`~/.cc-sandbox/ca-cert.crt`に置くと、本体コンテナ・DinDサイドカーの両方に自動的に適用される（[ADR-0007](docs/adr/0007-corporate-ca-and-proxy-per-host-file.md)）。認証プロファイル（`--profile`）とは独立しており、専用のCLIフラグは持たない。
+_Avoid_: ルート証明書, 社内証明書（曖昧なので「企業CA証明書」に統一）
+
+**`~/.cc-sandbox/proxy.env`**:
+企業ネットワークが明示的なフォワードプロキシを要求する場合に、`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`を置くホスト側の設定ファイル。プロキシの要否は「どの認証プロファイルを使うか」ではなく「どのホスト（PC）を使っているか」で決まるため、`env.<name>`（認証プロファイル）とは別ファイルにして`--profile`の指定有無から独立させている。
+_Avoid_: プロキシプロファイル（`env.<name>`と混同しやすいため区別する）
 
 **install.sh**:
 `curl -fsSL <URL> | bash`で取得・実行する、cc-sandboxのインストールスクリプト。リポジトリを`~/.cc-sandbox/src`にclone（既にあれば更新）し、`bin/cc-sandbox`を`~/.local/bin`へsymlinkすることで、どのディレクトリからでも`cc-sandbox`コマンドを呼べるようにする（[ADR-0005](docs/adr/0005-install-script-fixed-clone-and-symlink.md)）。
