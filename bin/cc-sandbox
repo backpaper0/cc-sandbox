@@ -22,6 +22,8 @@ Usage:
   bin/cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
   bin/cc-sandbox down [project-dir] [--name <slug>]
   bin/cc-sandbox list
+  bin/cc-sandbox exec [project-dir] [--name <slug>] [-- <command...>]
+  bin/cc-sandbox password [project-dir] [--name <slug>]
 
   up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
         --profile loads ~/.cc-sandbox/env.<name> (see docs/adr/0003) and injects its
@@ -42,6 +44,13 @@ Usage:
         running instance (if there is exactly one) is torn down.
   list  Show every currently running sandbox instance: its name/slug, the
         project directory it has mounted, and its code-server address.
+  exec  Run a command inside a running instance's container as the sandbox user
+        (default: bash, an interactive shell). Identified the same way as
+        'down': by <project-dir>, by --name, or, if both are omitted, the
+        single running instance (if there is exactly one).
+  password
+        Print a running instance's code-server password. Identified the same
+        way as 'exec'.
 EOF
 }
 
@@ -219,6 +228,16 @@ compose() {
 container_workspace_dir() {
   docker inspect "$1" \
     --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}'
+}
+
+# The cc-sandbox service container for a given compose project name, found by
+# label rather than via `compose ps` -- unlike cmd_down/cmd_up, callers here
+# (list_row, cmd_exec, cmd_password) are read-only and have no project directory
+# of their own to export as PROJECT_DIR for compose's validation.
+container_id_for_project() {
+  docker ps -q \
+    --filter "label=com.docker.compose.project=$1" \
+    --filter "label=com.docker.compose.service=cc-sandbox"
 }
 
 check_name_not_in_use_by_other_dir() {
@@ -751,9 +770,7 @@ cmd_down() {
 list_row() {
   local project_name="$1"
   local container_id
-  container_id="$(docker ps -q \
-    --filter "label=com.docker.compose.project=${project_name}" \
-    --filter "label=com.docker.compose.service=cc-sandbox")"
+  container_id="$(container_id_for_project "${project_name}")"
   if [[ -z "${container_id}" ]]; then
     return
   fi
@@ -792,6 +809,183 @@ cmd_list() {
   done <<<"${names}"
 }
 
+# Resolves <project-dir>/--name to a running instance's compose project name,
+# the same rule cmd_down uses: both optional and mutually exclusive, falling
+# back to the sole running instance when neither is given. Shared by cmd_exec
+# and cmd_password, which -- like cmd_down and unlike cmd_up -- operate on an
+# instance that must already exist rather than materializing one. Prints the
+# project name on stdout; everything else goes to stderr. Uses `return`, not
+# `exit`, so callers capturing this via command substitution get a clean
+# failure to react to (see sanitize_name's comment for why).
+resolve_running_instance() {
+  local project_dir="$1"
+  local name="$2"
+  local name_given="$3"
+
+  if [[ "${name_given}" == true && -n "${project_dir}" ]]; then
+    echo "error: pass either <project-dir> or --name, not both" >&2
+    return 1
+  fi
+
+  if [[ "${name_given}" == true ]]; then
+    compose_project_name_for_name "${name}"
+    return
+  fi
+
+  if [[ -n "${project_dir}" ]]; then
+    local resolved_dir
+    resolved_dir="$(cd "${project_dir}" && pwd -P)"
+    compose_project_name "${resolved_dir}"
+    return
+  fi
+
+  local names
+  names="$(running_sandbox_project_names)"
+  local count
+  count="$(grep -c . <<<"${names}" || true)"
+  if [[ -z "${names}" || "${count}" -eq 0 ]]; then
+    echo "error: no running sandbox instances found" >&2
+    return 1
+  elif [[ "${count}" -gt 1 ]]; then
+    echo "error: multiple sandbox instances running, specify a project directory or --name:" >&2
+    echo "${names}" >&2
+    return 1
+  fi
+  echo "${names}"
+}
+
+# Shared by cmd_exec and cmd_password: resolves the target instance and fails
+# closed with a clear message (rather than a raw `docker exec` error) if its
+# container isn't running. Prints the container id on stdout.
+resolve_running_container() {
+  local project_dir="$1"
+  local name="$2"
+  local name_given="$3"
+
+  local project_name
+  project_name="$(resolve_running_instance "${project_dir}" "${name}" "${name_given}")" || return 1
+
+  local container_id
+  container_id="$(container_id_for_project "${project_name}")"
+  if [[ -z "${container_id}" ]]; then
+    echo "error: no running container for '${project_name#cc-sandbox-}'; run 'bin/cc-sandbox up' first" >&2
+    return 1
+  fi
+  echo "${container_id}"
+}
+
+cmd_exec() {
+  local project_dir=""
+  local name=""
+  local name_given=false
+  local -a cmd=()
+  local cmd_given=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name)
+        if [[ $# -lt 2 ]]; then
+          echo "error: --name requires an argument" >&2
+          exit 1
+        fi
+        name="$2"
+        name_given=true
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        name_given=true
+        shift
+        ;;
+      --)
+        shift
+        cmd=("$@")
+        cmd_given=true
+        break
+        ;;
+      -*)
+        echo "error: unknown option '$1'" >&2
+        usage >&2
+        exit 1
+        ;;
+      *)
+        if [[ -n "${project_dir}" ]]; then
+          echo "error: unexpected argument '$1'" >&2
+          exit 1
+        fi
+        project_dir="$1"
+        shift
+        ;;
+    esac
+  done
+
+  local container_id
+  container_id="$(resolve_running_container "${project_dir}" "${name}" "${name_given}")" || exit 1
+
+  if [[ "${cmd_given}" != true ]]; then
+    cmd=(bash)
+  fi
+
+  # -t needs a TTY to allocate a pseudo one against; without this check, a
+  # non-interactive caller (a script, a CI job, an output pipe) would hit
+  # docker's "the input device is not a TTY" error even though -i alone would
+  # have worked fine for it (mirrors `docker compose exec`'s own behavior).
+  local -a tty_flags=(-i)
+  if [[ -t 0 ]]; then
+    tty_flags=(-it)
+  fi
+
+  # Replaces this process rather than being run as a child: the whole point is
+  # to hand the caller's terminal (and exit code) directly to the container.
+  exec docker exec "${tty_flags[@]}" -u "${SANDBOX_USER}" "${container_id}" "${cmd[@]}"
+}
+
+cmd_password() {
+  local project_dir=""
+  local name=""
+  local name_given=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name)
+        if [[ $# -lt 2 ]]; then
+          echo "error: --name requires an argument" >&2
+          exit 1
+        fi
+        name="$2"
+        name_given=true
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        name_given=true
+        shift
+        ;;
+      -*)
+        echo "error: unknown option '$1'" >&2
+        usage >&2
+        exit 1
+        ;;
+      *)
+        if [[ -n "${project_dir}" ]]; then
+          echo "error: unexpected argument '$1'" >&2
+          exit 1
+        fi
+        project_dir="$1"
+        shift
+        ;;
+    esac
+  done
+
+  local container_id
+  container_id="$(resolve_running_container "${project_dir}" "${name}" "${name_given}")" || exit 1
+
+  # Value only, no label: meant to be usable in a pipe (e.g. `| pbcopy`), same
+  # as the raw value a developer would get by hand-running the command `up`
+  # prints for this.
+  docker exec -u "${SANDBOX_USER}" "${container_id}" \
+    grep '^password:' "/home/${SANDBOX_USER}/.config/code-server/config.yaml" \
+    | sed 's/^password: *//'
+}
+
 main() {
   local sub="${1:-}"
   case "${sub}" in
@@ -806,6 +1000,14 @@ main() {
     list)
       shift
       cmd_list "$@"
+      ;;
+    exec)
+      shift
+      cmd_exec "$@"
+      ;;
+    password)
+      shift
+      cmd_password "$@"
       ;;
     -h | --help | "")
       usage

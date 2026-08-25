@@ -95,6 +95,8 @@ NO_PROXY=localhost,127.0.0.1,.internal.example.com
 cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
 cc-sandbox down [project-dir] [--name <slug>]
 cc-sandbox list
+cc-sandbox exec [project-dir] [--name <slug>] [-- <command...>]
+cc-sandbox password [project-dir] [--name <slug>]
 ```
 
 ### 起動
@@ -176,6 +178,17 @@ cc-sandbox down                     # 動いているインスタンスが1つ�
 ```
 
 キャッシュ用の名前付きボリュームは削除されないので、次に `up` したときに再利用されます。指定に該当する起動中インスタンスがない場合は、成功したように見せずエラーになります。
+
+### 起動中インスタンスへの接続
+
+`up`の出力（`Enter with:`/`Password:`行）をコピペしなくても、`exec`/`password`から後で改めて取得・実行できます。対象インスタンスの指定方法は`down`と同じで、`<project-dir>`または`--name`、両方省略時は起動中インスタンスが1つだけならそれを使います。
+
+```sh
+cc-sandbox exec ~/work/my-project        # bashで入る
+cc-sandbox exec --name feature-a         # --nameで起動したものを指定
+cc-sandbox exec -- ls -la /workspace     # 任意コマンドを実行（--以降がそのまま渡る）
+cc-sandbox password ~/work/my-project    # code-serverのパスワードの値だけを出力
+```
 
 ## サンドボックスの中身
 
