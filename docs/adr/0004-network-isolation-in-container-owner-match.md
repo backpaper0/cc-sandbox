@@ -107,6 +107,10 @@ DinD内で起動されたコンテナ（Testcontainers等）自体の隔離は�
 
 実装: `sandbox/isolate-forward.sh`、`sandbox/isolate.sh`の`dind_ip`例外、`bin/sandbox`の`apply_dind_network_isolation`（`wait_for_dind`より後に実行）。
 
+## 追記: ticket 13（`dev`のsudo制限）による部分的な見直し
+
+「rootは隔離できない。`dev`はsudo経由でルールを削除できる」という本ADRの弱点のうち、「意図的な脱出」ではなく「利便性による意図しない隔離解除」の部分は、[ADR-0008](0008-restrict-dev-sudo-to-package-management.md)で`dev`のsudoを`apt-get`/`apt`のみに限定することで対応した。本ADRが受け入れた「サンドボックス内からの意図的な脱出は防御対象外」という基本方針そのものは変わっていない。
+
 ## 補足情報
 
 * ADR-0002 を置き換える。ADR-0002 が記録した「`--internal`ネットワークはインターネットアクセスも遮断してしまうため要件に合わない」「運用ルールのみでは`0.0.0.0`バインドの事故を防げない」という判断は本ADRでも引き続き有効であり、覆していない。変わったのは**ルールをどの層に置くか**だけである。
