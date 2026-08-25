@@ -131,9 +131,11 @@ RUN mkdir -p "${HOME}/.cache/uv" "${HOME}/.npm" "${HOME}/.m2" "${HOME}/.cache/ms
 # (ADR-0008). Kept unrestricted up to this point rather than narrowed at
 # useradd time: `sudo env PATH=... playwright install-deps` above invokes
 # /usr/bin/env, not apt-get/apt directly, so narrowing any earlier would break
-# the build.
-RUN echo "${USERNAME} ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt" | sudo tee "/etc/sudoers.d/${USERNAME}" \
-    && sudo chmod 0440 "/etc/sudoers.d/${USERNAME}"
+# the build. Both the write and the chmod happen inside a single `sudo sh -c`
+# invocation: sudo re-reads sudoers.d on every invocation, so writing the
+# narrowed rule and then chmod-ing it as two separate `sudo` calls would have
+# the first call cut off the second (chmod isn't in the allowlist it just wrote).
+RUN sudo sh -c "echo '${USERNAME} ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/apt' > /etc/sudoers.d/${USERNAME} && chmod 0440 /etc/sudoers.d/${USERNAME}"
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/cc-sandbox-entrypoint"]
