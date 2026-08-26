@@ -15,6 +15,18 @@
 
 load helpers
 
+# Mirrors bin/cc-sandbox's own sanitize_name/to_dash_charset (see
+# test/sandbox_list.bats): --name is normalized to lowercase letters, digits,
+# and dashes before it becomes the instance's actual project name, so a NAME_*
+# built from mktemp -d's raw basename (which contains '.' and possibly
+# uppercase) would never match what `list`/notify_state_paths actually use
+# unless normalized here the same way first.
+instance_name_from_project_dir() {
+  printf '%s' "$(basename "$1")" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr -c 'a-z0-9' '-'
+}
+
 setup_file() {
   export CC_SANDBOX_BIN="${BATS_TEST_DIRNAME}/../bin/cc-sandbox"
 
@@ -24,9 +36,9 @@ setup_file() {
   PROJECT_DIR_C="$(cd "$(mktemp -d)" && pwd -P)"
 
   export NAME_A NAME_B NAME_C
-  NAME_A="notify-a-$(basename "$PROJECT_DIR_A")"
-  NAME_B="notify-b-$(basename "$PROJECT_DIR_B")"
-  NAME_C="notify-c-$(basename "$PROJECT_DIR_C")"
+  NAME_A="notify-a-$(instance_name_from_project_dir "$PROJECT_DIR_A")"
+  NAME_B="notify-b-$(instance_name_from_project_dir "$PROJECT_DIR_B")"
+  NAME_C="notify-c-$(instance_name_from_project_dir "$PROJECT_DIR_C")"
 }
 
 teardown_file() {
