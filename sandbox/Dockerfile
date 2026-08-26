@@ -111,6 +111,15 @@ RUN npm install -g \
 COPY --chown=${USERNAME}:${USERNAME} claude-wrapper.sh "${HOME}/.local/bin/claude"
 RUN chmod 0755 "${HOME}/.local/bin/claude"
 
+# 通知ウォッチャー（docs/adr/0009）: Stop/Notification(idle_prompt)フックから
+# 呼ばれる薄いスクリプトと、それを登録するユーザースコープのhooks設定。
+# `claude mcp add --scope user`（上記）は~/.claude.jsonに書かれ、ここでCOPYする
+# ~/.claude/settings.jsonとは別ファイルなので、既存のMCP登録には影響しない。
+COPY --chown=${USERNAME}:${USERNAME} notify-hook.sh "${HOME}/.local/bin/cc-sandbox-notify-hook"
+RUN chmod 0755 "${HOME}/.local/bin/cc-sandbox-notify-hook"
+
+COPY --chown=${USERNAME}:${USERNAME} claude-settings.json "${HOME}/.claude/settings.json"
+
 # Install Chromium's OS libraries into the image and seed the browser cache.
 # bin/cc-sandbox repeats the browser install after applying network isolation as a
 # cheap no-op, so an already-created ticket-07 cache volume that predates this

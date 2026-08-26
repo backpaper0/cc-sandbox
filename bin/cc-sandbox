@@ -19,7 +19,7 @@ CA_CERT_DEST="${CC_SANDBOX_ROOT}/sandbox/ca-cert.crt"
 usage() {
   cat <<'EOF'
 Usage:
-  bin/cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
+  bin/cc-sandbox up <project-dir> [--profile <name>] [--name <slug>] [--no-notify]
   bin/cc-sandbox down [project-dir] [--name <slug>]
   bin/cc-sandbox list
   bin/cc-sandbox exec [project-dir] [--name <slug>] [-- <command...>]
@@ -39,11 +39,16 @@ Usage:
         If ~/.cc-sandbox/ca-cert.crt and/or ~/.cc-sandbox/proxy.env exist, they are
         picked up automatically (no flag needed) and applied to both the main
         container and the DinD sidecar (see docs/adr/0007).
+        A host-side "通知ウォッチャー" starts automatically alongside the instance
+        and notifies you (a native OS notification) when Claude Code's turn
+        returns to you inside it (see docs/adr/0009). Pass --no-notify to skip it
+        for this instance.
   down  Tear down a sandbox instance, identified by <project-dir> or by --name
         (whichever the matching 'up' used). If neither is given, the single
         running instance (if there is exactly one) is torn down.
   list  Show every currently running sandbox instance: its name/slug, the
-        project directory it has mounted, and its code-server address.
+        project directory it has mounted, its code-server address, and its
+        notification watcher's status (running / disabled / down).
   exec  Run a command inside a running instance's container as the sandbox user
         (default: bash, an interactive shell). Identified the same way as
         'down': by <project-dir>, by --name, or, if both are omitted, the
@@ -475,6 +480,173 @@ dind_cache_volume_in_use_by_other_project() {
   return 1
 }
 
+# 通知ウォッチャー（ホスト側、docs/adr/0009）。cc-sandbox up/down/listが管理する
+# 初めての常駐プロセス: docker exec経由でコンテナ内のClaude Codeフック発火
+# （sandbox/claude-settings.json / sandbox/notify-hook.sh）を検知し、ホストOS
+# ネイティブの通知を出す。隔離・セキュリティには関与しないただの利便機能なので、
+# ここで失敗してもup/downの本質的な処理は止めない（ADR-0009のベストエフォート方針）。
+
+notify_run_dir() {
+  local dir="${HOME}/.cc-sandbox/run"
+  mkdir -p "${dir}"
+  echo "${dir}"
+}
+
+# そのインスタンスのウォッチャー状態を表す3パスをまとめて返す（PIDファイル・
+# ログファイル・--no-notify指定を記録する無効化マーカー）。呼び出し側は
+# `read -r pids_file log_file disabled_marker <<<"$(notify_state_paths "$name")"`
+# のように分割して使う。
+notify_state_paths() {
+  local project_name="$1"
+  local dir
+  dir="$(notify_run_dir)"
+  echo "${dir}/${project_name}.pids ${dir}/${project_name}.log ${dir}/${project_name}.disabled"
+}
+
+# ホストOSネイティブの通知を出す。macOSはosascript、WSL2はpowershell.exe経由の
+# System.Windows.Forms.NotifyIconのバルーン通知（トースト通知ではないが、追加
+# インストール無しで動く）。どちらでもないホストでは何もしない。バックグラウンド
+# で起動し、呼び出し元（notify_watch_loop）をブロックしない。
+send_host_notification() {
+  local label="$1" event_type="$2"
+  local message
+  case "${event_type}" in
+    stop) message="入力待ちです" ;;
+    idle_prompt) message="まだ入力待ちです" ;;
+    *) message="通知" ;;
+  esac
+
+  case "$(uname -s)" in
+    Darwin)
+      osascript -e "display notification \"${message}\" with title \"cc-sandbox: ${label}\"" \
+        >/dev/null 2>&1 &
+      ;;
+    Linux)
+      if grep -qi microsoft /proc/version 2>/dev/null; then
+        powershell.exe -NoProfile -NonInteractive -Command "
+          Add-Type -AssemblyName System.Windows.Forms;
+          \$n = New-Object System.Windows.Forms.NotifyIcon;
+          \$n.Icon = [System.Drawing.SystemIcons]::Information;
+          \$n.Visible = \$true;
+          \$n.ShowBalloonTip(5000, 'cc-sandbox: ${label}', '${message}', [System.Windows.Forms.ToolTipIcon]::Info);
+          Start-Sleep -Seconds 6;
+          \$n.Dispose()
+        " >/dev/null 2>&1 &
+      fi
+      ;;
+  esac
+}
+
+# 通知ウォッチャーの本体ループ。start_notify_watcherがコンテナ内のnotifyログを
+# streamしてくるFIFOをstdinに繋いで呼ぶ。行ごとに"<event> <epoch>"を読み、stopは
+# 常に即時通知（かつクールダウンの基準時刻を更新）、idle_promptは
+# CC_SANDBOX_NOTIFY_COOLDOWN_SECONDS（既定300秒、テストでは短く上書き可能）以内の
+# 再通知を間引く（docs/adr/0009: idle_promptは約60秒おきに繰り返し発火するため）。
+# 処理した行ごとに"notified: <event>"をstdoutへ出す（テストがここを観測する）。
+notify_watch_loop() {
+  local label="$1"
+  local cooldown="${CC_SANDBOX_NOTIFY_COOLDOWN_SECONDS:-300}"
+  local last_notified=0
+  local event ts now
+  while IFS=' ' read -r event ts; do
+    now="$(date +%s)"
+    case "${event}" in
+      stop)
+        send_host_notification "${label}" "stop"
+        last_notified="${now}"
+        echo "notified: stop"
+        ;;
+      idle_prompt)
+        if (( now - last_notified >= cooldown )); then
+          send_host_notification "${label}" "idle_prompt"
+          last_notified="${now}"
+          echo "notified: idle_prompt"
+        fi
+        ;;
+    esac
+  done
+}
+
+# ウォッチャーを起動する。コンテナ内のnotifyログをdocker execでストリームする
+# プロセスと、それを読んで通知するnotify_watch_loopを、名前付きFIFOで橋渡しして
+# 別々にバックグラウンド化する（setsidはmacOSに無いため使わず、両方のPIDを
+# 個別に記録してstop_notify_watcherで両方killする）。失敗しても警告を出すだけで
+# upは失敗させない。
+#
+# notify_watch_loopを`( ... ) &`で余分にsubshellへ包まないこと: 実測で確認した
+# bashの挙動として、「FIFOから読む`while read`ループを持つコマンドを、さらに
+# `(...)`でsubshell化してバックグラウンド化する」と、そのループが動いている間、
+# このスクリプト自身の呼び出し元（`cmd_up() { ... }`を`$(...)`やパイプで出力
+# キャプチャする側、例えばbatsの`run`）がプロセス終了後もEOFを受け取れず
+# ハングする（このループはtail -Fの入力を待って恒久的にブロックし続けるのが
+# 正常な動作なので、いつまでも終わらない）。`( ... ) &`を外し、バックグラウンド
+# 対象をnotify_watch_loop自身の呼び出しにする（`func <redirects> &`という単純な
+# 形）だけでこの問題は再現しなくなる。
+start_notify_watcher() {
+  local project_name="$1"
+  local container_id="$2"
+  local label="${project_name#cc-sandbox-}"
+
+  local pids_file log_file disabled_marker
+  read -r pids_file log_file disabled_marker <<<"$(notify_state_paths "${project_name}")"
+
+  local fifo
+  fifo="$(mktemp -u "${TMPDIR:-/tmp}/cc-sandbox-notify-XXXXXX")"
+  if ! mkfifo "${fifo}" 2>/dev/null; then
+    echo "warning: failed to create notify watcher FIFO for '${label}'; notifications disabled for this instance" >&2
+    return 0
+  fi
+
+  docker exec -u "${SANDBOX_USER}" "${container_id}" \
+    bash -c 'touch "${HOME}/.cache/cc-sandbox-notify.log"; exec tail -n0 -F "${HOME}/.cache/cc-sandbox-notify.log"' \
+    >"${fifo}" 2>>"${log_file}" &
+  local exec_pid=$!
+
+  notify_watch_loop "${label}" <"${fifo}" >>"${log_file}" 2>&1 &
+  local loop_pid=$!
+
+  printf '%s %s %s\n' "${exec_pid}" "${loop_pid}" "${fifo}" >"${pids_file}"
+}
+
+# ウォッチャーを止める。upが--no-notifyだった、あるいはstart_notify_watcher自体が
+# 失敗していた場合はpidsファイルが無いので何もしない。killの失敗はもみ消す
+# （docs/adr/0009: 停止に失敗してもdown全体は続行するベストエフォート方針）。
+stop_notify_watcher() {
+  local project_name="$1"
+  local pids_file log_file disabled_marker
+  read -r pids_file log_file disabled_marker <<<"$(notify_state_paths "${project_name}")"
+
+  if [[ -f "${pids_file}" ]]; then
+    local exec_pid loop_pid fifo
+    read -r exec_pid loop_pid fifo <"${pids_file}"
+    kill "${exec_pid}" "${loop_pid}" 2>/dev/null || true
+    rm -f "${fifo}"
+  fi
+  rm -f "${pids_file}" "${log_file}" "${disabled_marker}"
+}
+
+# `list`用の3値ステータス。--no-notifyで意図的に無効化した場合と、本来動くはずが
+# 落ちている場合を区別する（docs/adr/0009）。
+notify_watcher_status() {
+  local project_name="$1"
+  local pids_file log_file disabled_marker
+  read -r pids_file log_file disabled_marker <<<"$(notify_state_paths "${project_name}")"
+
+  if [[ -f "${disabled_marker}" ]]; then
+    echo "disabled"
+    return
+  fi
+  if [[ -f "${pids_file}" ]]; then
+    local exec_pid loop_pid _fifo
+    read -r exec_pid loop_pid _fifo <"${pids_file}"
+    if kill -0 "${exec_pid}" 2>/dev/null && kill -0 "${loop_pid}" 2>/dev/null; then
+      echo "running"
+      return
+    fi
+  fi
+  echo "down"
+}
+
 cmd_up() {
   local project_dir=""
   local profile=""
@@ -482,8 +654,13 @@ cmd_up() {
   local profile_interactive=false
   local name=""
   local name_given=false
+  local no_notify=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --no-notify)
+        no_notify=true
+        shift
+        ;;
       --profile)
         # A missing value (end of args, or the next token looking like another
         # flag) means "let me pick one interactively" rather than an error --
@@ -657,6 +834,20 @@ cmd_up() {
     exit 1
   fi
 
+  # Not fail-closed like the steps above: the notify watcher is a convenience
+  # feature uninvolved in isolation/security (docs/adr/0009), so it never tears
+  # the sandbox down. stop_notify_watcher first makes re-running `up` against an
+  # already-running instance idempotent (otherwise a second watcher would start
+  # alongside the first and double-notify).
+  stop_notify_watcher "${project_name}"
+  if [[ "${no_notify}" == true ]]; then
+    local _pids_file _log_file disabled_marker
+    read -r _pids_file _log_file disabled_marker <<<"$(notify_state_paths "${project_name}")"
+    : >"${disabled_marker}"
+  else
+    start_notify_watcher "${project_name}" "${container_id}"
+  fi
+
   echo
   echo "Sandbox '${project_name}' is up."
   echo "  Project dir:  ${project_dir} -> /workspace"
@@ -757,6 +948,10 @@ cmd_down() {
     exit 1
   fi
 
+  # Best-effort (docs/adr/0009): the notify watcher isn't part of isolation, so
+  # its stop failing must never block tearing the actual sandbox down.
+  stop_notify_watcher "${project_name}"
+
   compose "${project_name}" down
 }
 
@@ -784,8 +979,11 @@ list_row() {
   local code_server_addr
   code_server_addr="$(docker port "${container_id}" 8080 2>/dev/null || true)"
 
-  printf '%-30s %-45s %s\n' \
-    "${project_name#cc-sandbox-}" "${project_dir:-?}" "${code_server_addr:-(not ready)}"
+  local notify_status
+  notify_status="$(notify_watcher_status "${project_name}")"
+
+  printf '%-30s %-45s %-22s %s\n' \
+    "${project_name#cc-sandbox-}" "${project_dir:-?}" "${code_server_addr:-(not ready)}" "${notify_status}"
 }
 
 cmd_list() {
@@ -802,7 +1000,7 @@ cmd_list() {
     return 0
   fi
 
-  printf '%-30s %-45s %s\n' "NAME" "PROJECT DIR" "CODE-SERVER"
+  printf '%-30s %-45s %-22s %s\n' "NAME" "PROJECT DIR" "CODE-SERVER" "NOTIFY"
   local project_name
   while IFS= read -r project_name; do
     list_row "${project_name}"

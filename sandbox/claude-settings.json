@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/dev/.local/bin/cc-sandbox-notify-hook stop"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/dev/.local/bin/cc-sandbox-notify-hook idle_prompt"
+          }
+        ]
+      }
+    ]
+  }
+}

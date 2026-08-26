@@ -14,6 +14,7 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 - Playwright MCP サーバーが同梱済みで、Claude Code が headless ブラウザで dev サーバーの画面を検証できる
 - 複数インスタンスを同時起動でき、互いにネットワーク・ボリュームが分離される
 - ツールキャッシュ（mise / uv / npm / Maven / Docker レイヤー / Playwright ブラウザ）は全インスタンス共通のボリュームに永続化され、作り直しても再ダウンロードが発生しない
+- Claude Code のターンがユーザーへ戻ったら、ホストOSのネイティブ通知で気付ける（[ADR-0009](docs/adr/0009-turn-notification-via-host-watcher.md)）。bypass permissions で走らせたまま別作業をしていても見逃しにくい
 
 ## 前提条件
 
@@ -92,7 +93,7 @@ NO_PROXY=localhost,127.0.0.1,.internal.example.com
 ## 使い方
 
 ```
-cc-sandbox up <project-dir> [--profile <name>] [--name <slug>]
+cc-sandbox up <project-dir> [--profile <name>] [--name <slug>] [--no-notify]
 cc-sandbox down [project-dir] [--name <slug>]
 cc-sandbox list
 cc-sandbox exec [project-dir] [--name <slug>] [-- <command...>]
@@ -135,6 +136,12 @@ Sandbox 'cc-sandbox-my-project-1a2b3c4d' is up.
   Password:     docker exec -u dev <container-id> grep '^password:' /home/dev/.config/code-server/config.yaml
 ```
 
+「通知ウォッチャー」（[ADR-0009](docs/adr/0009-turn-notification-via-host-watcher.md)）がホスト側でバックグラウンド自動起動し、Claude Code のターンがユーザーへ戻ったらホストOSのネイティブ通知を出します。不要な場合はインスタンス単位で無効化できます。
+
+```sh
+cc-sandbox up ~/work/my-project --profile private --no-notify
+```
+
 サンドボックスに入って Claude Code を起動するには:
 
 ```sh
@@ -164,10 +171,12 @@ cc-sandbox list
 ```
 
 ```
-NAME                           PROJECT DIR                                   CODE-SERVER
-my-project-1a2b3c4d            /Users/you/work/my-project                    127.0.0.1:54321
-feature-a                      /Users/you/work/my-project                    127.0.0.1:54322
+NAME                           PROJECT DIR                                   CODE-SERVER            NOTIFY
+my-project-1a2b3c4d            /Users/you/work/my-project                    127.0.0.1:54321        running
+feature-a                      /Users/you/work/my-project                    127.0.0.1:54322        disabled
 ```
+
+`NOTIFY` 列は通知ウォッチャーの状態です。`running`（稼働中）/ `disabled`（`--no-notify` で意図的に無効化）/ `down`（本来動くはずが停止している）のいずれかを示します。
 
 ### 破棄
 
