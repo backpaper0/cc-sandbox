@@ -13,7 +13,7 @@ load helpers
 
 # Container-side paths whose caches must be backed by a volume shared across all
 # instances -- kept as one table so every test below iterates the same set instead
-# of drifting out of sync with sandbox/docker-compose.yml's `cc-sandbox` service.
+# of drifting out of sync with sandbox/compose.yaml's `cc-sandbox` service.
 CACHE_PATHS=(
   "/home/dev/.local/share/mise"
   "/home/dev/.cache/uv"
@@ -65,7 +65,7 @@ teardown_file() {
   # Sharing /var/lib/docker between two *concurrently running* dind daemons hangs
   # the second one (containerd's metadata store takes an exclusive lock on it) --
   # found in review, see bin/cc-sandbox's dind_cache_volume_in_use_by_other_project
-  # and docker-compose.yml's DIND_CACHE_VOLUME comment. So instance A (started
+  # and compose.yaml's DIND_CACHE_VOLUME comment. So instance A (started
   # first, in setup_file) claims the globally-shared volume, and instance B
   # (started next, while A is still up) must fall back to its own instance-scoped
   # one instead of contending for A's.

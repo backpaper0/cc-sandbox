@@ -3,7 +3,7 @@
 set -euo pipefail
 
 CC_SANDBOX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-COMPOSE_FILE="${CC_SANDBOX_ROOT}/sandbox/docker-compose.yml"
+COMPOSE_FILE="${CC_SANDBOX_ROOT}/sandbox/compose.yaml"
 
 # The non-root account inside the image (sandbox/Dockerfile's USERNAME), i.e. the
 # user whose traffic the isolation rules apply to.
@@ -11,7 +11,7 @@ SANDBOX_USER=dev
 
 # Fixed, .gitignore'd path inside the build context (ticket 12, ADR-0007) that
 # sandbox/Dockerfile's COPY reads the corporate CA certificate from at build
-# time, and that docker-compose.yml's dind service bind-mounts at run time --
+# time, and that compose.yaml's dind service bind-mounts at run time --
 # staged fresh from ~/.cc-sandbox/ca-cert.crt on every `up` so both consumers
 # see the exact same bytes from a single copy step.
 CA_CERT_DEST="${CC_SANDBOX_ROOT}/sandbox/ca-cert.crt"
@@ -259,7 +259,7 @@ check_name_not_in_use_by_other_dir() {
   local project_name="$1"
   local project_dir="$2"
   local existing_container
-  # Requires PROJECT_DIR to already be exported: docker-compose.yml's
+  # Requires PROJECT_DIR to already be exported: compose.yaml's
   # `${PROJECT_DIR}:/workspace` has no `:-` default, so without it `compose ps`
   # fails validation outright (rather than reporting "no container") and that
   # failure is swallowed by `|| true` below -- silently turning this whole guard
@@ -332,7 +332,7 @@ acquire_name_lock() {
 
 # Stages ~/.cc-sandbox/ca-cert.crt (if present) into the build context at
 # CA_CERT_DEST (ticket 12, ADR-0007) so sandbox/Dockerfile's COPY and
-# docker-compose.yml's dind bind mount both pick it up. Also removes any stale
+# compose.yaml's dind bind mount both pick it up. Also removes any stale
 # copy left by a previous `up` when the host no longer has one -- otherwise a
 # deleted corporate CA would keep getting baked into fresh builds silently.
 #
@@ -353,15 +353,15 @@ stage_ca_certificate() {
 
 # Loads ~/.cc-sandbox/proxy.env (if present) into this shell's own environment
 # (ticket 12, ADR-0007), so its HTTP_PROXY/HTTPS_PROXY/NO_PROXY reach BuildKit's
-# automatic proxy-arg propagation at `compose build`, and so docker-compose.yml
+# automatic proxy-arg propagation at `compose build`, and so compose.yaml
 # can interpolate them into the dind service's `environment:` at `compose up`.
 # Also sets CC_SANDBOX_PROXY_ENV_FILE (for the cc-sandbox service's own
-# env_file, see docker-compose.yml) and CC_SANDBOX_NO_PROXY. A missing file is
+# env_file, see compose.yaml) and CC_SANDBOX_NO_PROXY. A missing file is
 # not an error -- unlike --profile, a proxy is a property of the host machine,
 # not something explicitly requested per invocation.
 #
 # CC_SANDBOX_NO_PROXY (NO_PROXY plus "dind") overrides the cc-sandbox service's
-# own NO_PROXY in docker-compose.yml, not the dind service's: it's the `docker`
+# own NO_PROXY in compose.yaml, not the dind service's: it's the `docker`
 # CLI running *inside* cc-sandbox (DOCKER_HOST=tcp://dind:2375) that honors
 # HTTP_PROXY/HTTPS_PROXY for that connection, so without "dind" in *its*
 # NO_PROXY a configured proxy would try to tunnel the sandbox<->DinD control
@@ -422,7 +422,7 @@ apply_dind_network_isolation() {
 
 # Installs the corporate CA certificate into the DinD sidecar (ticket 12,
 # ADR-0007), the same docker-exec-as-root pattern
-# apply_network_isolation/apply_dind_network_isolation use. docker-compose.yml
+# apply_network_isolation/apply_dind_network_isolation use. compose.yaml
 # bind-mounts CC_SANDBOX_CA_CERT_FILE (or /dev/null) into the sidecar's
 # ca-certificates.d, so this just has to trigger Alpine's
 # update-ca-certificates -- skipped entirely when there's nothing to install.
@@ -473,7 +473,7 @@ wait_for_code_server() {
 # globally-shared Docker image-layer cache volume mounted. containerd's metadata
 # store inside that volume takes an exclusive lock on dockerd startup, so a second
 # dind sharing it concurrently would hang rather than start (see
-# sandbox/docker-compose.yml's DIND_CACHE_VOLUME comment; verified directly in
+# sandbox/compose.yaml's DIND_CACHE_VOLUME comment; verified directly in
 # review against two real docker:28-dind containers). Excludes the given project's
 # own containers so re-running `up` on an already-running instance doesn't flip its
 # own cache from shared to per-instance on every call.
@@ -755,7 +755,7 @@ cmd_up() {
 
   project_dir="$(cd "${project_dir}" && pwd -P)"
   # Exported before any `compose` call below (including inside
-  # check_name_not_in_use_by_other_dir), since docker-compose.yml's
+  # check_name_not_in_use_by_other_dir), since compose.yaml's
   # `${PROJECT_DIR}:/workspace` has no default and compose validates it while
   # loading the file even for a plain `ps`.
   export PROJECT_DIR="${project_dir}"
@@ -769,7 +769,7 @@ cmd_up() {
     project_name="$(compose_project_name "${project_dir}")"
   fi
 
-  # /dev/null keeps docker-compose.yml's env_file resolvable even without --profile.
+  # /dev/null keeps compose.yaml's env_file resolvable even without --profile.
   local env_file="/dev/null"
   if [[ "${profile_given}" == true ]]; then
     if [[ "${profile_from_env}" == true ]]; then
@@ -787,7 +787,7 @@ cmd_up() {
 
   # ticket 07: use the globally-shared Docker image-layer cache volume unless
   # another already-running instance currently holds it (see
-  # dind_cache_volume_in_use_by_other_project and docker-compose.yml's
+  # dind_cache_volume_in_use_by_other_project and compose.yaml's
   # DIND_CACHE_VOLUME comment for why sharing it concurrently doesn't work).
   local dind_cache_volume="cc-sandbox-cache-docker-layers"
   if dind_cache_volume_in_use_by_other_project "${dind_cache_volume}" "${project_name}"; then
@@ -993,7 +993,7 @@ cmd_down() {
 # Looks the container up directly by its compose labels rather than via
 # `compose ps` (unlike check_name_not_in_use_by_other_dir/cmd_down): `list` is
 # read-only and has no project directory of its own to export as PROJECT_DIR,
-# and docker-compose.yml's `${PROJECT_DIR}:/workspace` has no default, so a
+# and compose.yaml's `${PROJECT_DIR}:/workspace` has no default, so a
 # `compose` call here would need PROJECT_DIR exported per *instance* just to
 # satisfy validation, for a value `list` doesn't otherwise need at all.
 list_row() {

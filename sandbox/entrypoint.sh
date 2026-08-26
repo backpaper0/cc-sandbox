@@ -3,7 +3,7 @@
 # real command (see ticket 04: code-server integration).
 #
 # --bind-addr 0.0.0.0:8080 (rather than code-server's loopback-only default) is
-# required for docker-compose.yml's "127.0.0.1::PORT" port publish to reach it at
+# required for compose.yaml's "127.0.0.1::PORT" port publish to reach it at
 # all: Docker's port forwarding targets the container's bridge-network address,
 # not its loopback interface. The 127.0.0.1-only restriction that the ticket
 # actually asks for is enforced on the host side by that port publish, not here.

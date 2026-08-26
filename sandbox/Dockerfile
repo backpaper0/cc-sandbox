@@ -52,7 +52,7 @@ ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
 # invokes this as root once the container is running. blocked-ranges.sh is shared
 # with sandbox/isolate-forward.sh (the DinD sidecar's own isolation, ticket 05),
 # which sources it from the same path via a bind mount instead of a build (see
-# sandbox/docker-compose.yml's `dind` service).
+# sandbox/compose.yaml's `dind` service).
 COPY blocked-ranges.sh /usr/local/sbin/cc-sandbox-blocked-ranges
 COPY isolate.sh /usr/local/sbin/cc-sandbox-isolate
 RUN chmod 0755 /usr/local/sbin/cc-sandbox-isolate
@@ -127,7 +127,7 @@ COPY --chown=${USERNAME}:${USERNAME} claude-settings.json "${HOME}/.claude/setti
 RUN sudo env PATH="${PATH}" "$(npm prefix -g)/bin/playwright" install-deps chromium \
     && playwright install chromium
 
-# Pre-create the cache directories docker-compose.yml mounts shared volumes onto
+# Pre-create the cache directories compose.yaml mounts shared volumes onto
 # (ticket 07), owned by dev rather than left for Docker to create on first mount.
 # A named volume copies the target directory's existing ownership/content from the
 # image the first time it's mounted, but only if that directory already exists --

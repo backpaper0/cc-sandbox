@@ -22,7 +22,7 @@
 set -eu
 
 # Resolved at runtime rather than assumed to be "eth0": this container is only
-# ever attached to the one compose network sandbox/docker-compose.yml puts it on,
+# ever attached to the one compose network sandbox/compose.yaml puts it on,
 # so its default route names that interface, whatever Docker happens to call it.
 egress_iface="$(ip -o route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
 if [ -z "${egress_iface}" ]; then
