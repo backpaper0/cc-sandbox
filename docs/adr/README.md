@@ -10,3 +10,4 @@
 | [0006](0006-interactive-profile-selection.md) | `--profile`に値を省略すると、既存プロファイルから対話的に選択できるようにする | accepted | 2026-08-25 |
 | [0007](0007-corporate-ca-and-proxy-per-host-file.md) | 企業CA証明書とプロキシはホスト側ファイルの有無で自動注入し、`--profile`とは独立させる | accepted | 2026-08-25 |
 | [0008](0008-restrict-dev-sudo-to-package-management.md) | `dev`のsudoはOSパッケージ管理コマンドのみに限定する | accepted | 2026-08-26 |
+| [0009](0009-turn-notification-via-host-watcher.md) | ユーザー入力ターンの通知は、ホスト常駐の「通知ウォッチャー」が`Stop`/`idle_prompt`フックを検知する方式とする | accepted | 2026-08-26 |

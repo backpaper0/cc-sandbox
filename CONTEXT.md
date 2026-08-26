@@ -32,6 +32,10 @@ _Avoid_: alias, シェル関数（PATHシャドーイング方式を採用した
 本体コンテナに併走する特権コンテナで、ネストしたDocker daemonを提供する。Testcontainersや、開発者が手動で起動するPostgreSQL/Redis等のサービスコンテナはここで動く。本体コンテナと同じネットワーク隔離ルールの内側に置かれる。
 _Avoid_: ネストDocker, Docker-in-Docker（説明文中ではこの一般名称を使ってよいが、用語としてはDinDサイドカーに統一する）
 
+**通知ウォッチャー**:
+`cc-sandbox up` がサンドボックスインスタンスごとにホスト側でバックグラウンド自動起動し、`down`で自動停止する常駐プロセス。`docker exec`経由で本体コンテナ内のClaude Codeのフック（`Stop`および`Notification`の`idle_prompt`）発火を検知し、ホストOSネイティブの通知を出す。bypass permissionsで実行させたままユーザーが別作業をしていても、入力ターンが来たことに気付けるようにするための仕組み（[ADR-0009](docs/adr/0009-turn-notification-via-host-watcher.md)）。
+_Avoid_: ウォッチャー（単体だと将来のファイル監視系機能等と曖昧になるため「通知」を必ず付ける）, 通知デーモン（cc-sandboxの用語として「通知ウォッチャー」に統一）
+
 **ホスト**:
 サンドボックスの外側にある、macOS（私的環境）またはWSL2 Ubuntu（業務環境）上の物理/仮想マシン。サンドボックスインスタンスから隔離される対象。
 _Avoid_: ローカル環境, マシン
