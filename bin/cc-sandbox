@@ -33,6 +33,10 @@ Usage:
         or engagement rather than just "private"/"work". Pass --profile with no
         name (or --profile= with nothing after the '=') to pick one
         interactively from ~/.cc-sandbox/env.* instead (see docs/adr/0006).
+        Without --profile, the CC_SANDBOX_PROFILE environment variable is used
+        instead if set and non-empty (e.g. via mise's directory-scoped env vars,
+        so it's picked up automatically after `cd`ing into a project). An
+        explicit --profile always overrides it (see docs/adr/0010).
         --name gives the instance an explicit slug, so multiple instances (e.g. of
         the same or different project dirs) can run side by side (see ticket 06).
         Without --name, the instance is named after <project-dir> as before.
@@ -59,7 +63,7 @@ Usage:
 EOF
 }
 
-# Resolves --profile <name> to its host-side, git-ignored env file (see
+# Resolves a profile name to its host-side, git-ignored env file (see
 # docs/adr/0003-auth-injection-per-host-profile.md). <name> isn't a fixed
 # private/work choice -- any string of letters/digits/-/_ works, so a developer
 # can keep one profile per client or engagement. The charset restriction exists
@@ -67,26 +71,32 @@ EOF
 # Fails loudly rather than silently skipping injection, since a sandbox that
 # looks up but isn't actually authenticated is a confusing failure mode to debug
 # from inside bypass permissions.
+#
+# $2 (default "--profile") names the source in error messages -- cmd_up passes
+# '$CC_SANDBOX_PROFILE' when the name came from the environment (see
+# docs/adr/0010-profile-selection-via-environment-variable.md), so a failure
+# there doesn't read as if the user had typed --profile, which they didn't.
 resolve_profile_env_file() {
   local profile="$1"
+  local source="${2:---profile}"
   if [[ -z "${profile}" ]]; then
-    echo "error: --profile requires a non-empty value" >&2
+    echo "error: ${source} requires a non-empty value" >&2
     exit 1
   fi
   if [[ ! "${profile}" =~ ^[A-Za-z0-9_-]+$ ]]; then
-    echo "error: invalid profile name '${profile}' (use only letters, digits, '-', and '_')" >&2
+    echo "error: invalid profile name '${profile}' from ${source} (use only letters, digits, '-', and '_')" >&2
     exit 1
   fi
 
   if [[ -z "${HOME:-}" ]]; then
-    echo "error: \$HOME is not set; cannot resolve --profile ${profile}" >&2
+    echo "error: \$HOME is not set; cannot resolve ${source} ${profile}" >&2
     exit 1
   fi
 
   local path="${HOME}/.cc-sandbox/env.${profile}"
   if [[ ! -f "${path}" ]]; then
     echo "error: profile file not found: ${path}" >&2
-    echo "Create it with the '${profile}' profile's environment variables before using --profile ${profile}." >&2
+    echo "Create it with the '${profile}' profile's environment variables before using ${source} ${profile}." >&2
     exit 1
   fi
   echo "${path}"
@@ -652,6 +662,7 @@ cmd_up() {
   local profile=""
   local profile_given=false
   local profile_interactive=false
+  local profile_from_env=false
   local name=""
   local name_given=false
   local no_notify=false
@@ -721,6 +732,20 @@ cmd_up() {
     exit 1
   fi
 
+  # CC_SANDBOX_PROFILE (see docs/adr/0010-profile-selection-via-environment-variable.md)
+  # lets a profile be picked up automatically from the environment -- typically
+  # mise's directory-scoped env vars, activated by `cd`ing into a project before
+  # running `up` -- instead of typing --profile every time. An explicit --profile
+  # (with or without a name) always wins over it. An empty CC_SANDBOX_PROFILE is
+  # treated the same as unset rather than triggering interactive selection: that
+  # prompt is for a human typing a bare --profile, and a value arriving from the
+  # environment shouldn't unexpectedly block on stdin.
+  if [[ "${profile_given}" == false && -n "${CC_SANDBOX_PROFILE:-}" ]]; then
+    profile="${CC_SANDBOX_PROFILE}"
+    profile_given=true
+    profile_from_env=true
+  fi
+
   # Deferred until argument parsing/validation is fully done, so an unrelated
   # mistake elsewhere on the command line (a missing project-dir, an unknown
   # flag) fails fast instead of prompting the user first and then failing anyway.
@@ -747,7 +772,16 @@ cmd_up() {
   # /dev/null keeps docker-compose.yml's env_file resolvable even without --profile.
   local env_file="/dev/null"
   if [[ "${profile_given}" == true ]]; then
-    env_file="$(resolve_profile_env_file "${profile}")"
+    if [[ "${profile_from_env}" == true ]]; then
+      env_file="$(resolve_profile_env_file "${profile}" '$CC_SANDBOX_PROFILE')"
+      # Unlike an explicit --profile, this profile doesn't appear anywhere on the
+      # command line the user just typed, so which one got used is otherwise
+      # invisible -- worth surfacing given it decides which credentials get
+      # injected (see docs/adr/0010).
+      echo "Using profile: ${profile} (from \$CC_SANDBOX_PROFILE)" >&2
+    else
+      env_file="$(resolve_profile_env_file "${profile}")"
+    fi
   fi
   export CC_SANDBOX_ENV_FILE="${env_file}"
 

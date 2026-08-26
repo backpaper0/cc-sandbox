@@ -47,6 +47,17 @@ sandbox_up_with_home() {
     "$CC_SANDBOX_BIN" up "$PROJECT_DIR" "$@"
 }
 
+# Like sandbox_up_with_home, but also sets CC_SANDBOX_PROFILE (see
+# docs/adr/0010-profile-selection-via-environment-variable.md) -- the way mise's
+# directory-scoped env vars would surface it in a real shell.
+sandbox_up_with_home_and_env_profile() {
+  local sandbox_home="$1"
+  local env_profile="$2"
+  shift 2
+  env HOME="$sandbox_home" DOCKER_CONFIG="$DOCKER_CONFIG" CC_SANDBOX_PROFILE="$env_profile" \
+    "$CC_SANDBOX_BIN" up "$PROJECT_DIR" "$@"
+}
+
 @test "up --profile private injects the OAuth token and claude runs with no interactive login" {
   run sandbox_up_with_home "$FAKE_HOME" --profile private
   [ "$status" -eq 0 ]
@@ -129,4 +140,54 @@ sandbox_up_with_home() {
   run sandbox_up_with_home "$FAKE_HOME" --profile=
   [ "$status" -ne 0 ]
   [[ "$output" == *"non-interactive shell"* ]]
+}
+
+# CC_SANDBOX_PROFILE (docs/adr/0010): a profile picked up from the environment
+# when --profile is omitted, e.g. via mise's directory-scoped env vars.
+@test "up with no --profile falls back to CC_SANDBOX_PROFILE" {
+  run sandbox_up_with_home_and_env_profile "$FAKE_HOME" "work"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Using profile: work (from $CC_SANDBOX_PROFILE)'* ]]
+
+  run exec_in "printenv CLAUDE_CODE_USE_BEDROCK"
+  [ "$status" -eq 0 ]
+  [ "$output" = "1" ]
+}
+
+@test "up --profile overrides CC_SANDBOX_PROFILE" {
+  run sandbox_up_with_home_and_env_profile "$FAKE_HOME" "work" --profile private
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"CC_SANDBOX_PROFILE"* ]]
+
+  run exec_in "printenv CLAUDE_CODE_OAUTH_TOKEN"
+  [ "$status" -eq 0 ]
+  [ "$output" = "test-oauth-token-value" ]
+
+  run exec_in "printenv CLAUDE_CODE_USE_BEDROCK"
+  [ "$status" -ne 0 ]
+}
+
+@test "up with an empty CC_SANDBOX_PROFILE is treated as unset, not interactive selection" {
+  run sandbox_up_with_home_and_env_profile "$FAKE_HOME" ""
+  [ "$status" -eq 0 ]
+
+  run exec_in "printenv CLAUDE_CODE_OAUTH_TOKEN"
+  [ "$status" -ne 0 ]
+
+  run exec_in "printenv CLAUDE_CODE_USE_BEDROCK"
+  [ "$status" -ne 0 ]
+}
+
+@test "up with a CC_SANDBOX_PROFILE naming a missing profile fails clearly and names the env var" {
+  run sandbox_up_with_home_and_env_profile "$FAKE_HOME" "no-such-profile"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"env.no-such-profile"* ]]
+  [[ "$output" == *'$CC_SANDBOX_PROFILE'* ]]
+}
+
+@test "up with a CC_SANDBOX_PROFILE containing unsafe characters fails clearly and names the env var" {
+  run sandbox_up_with_home_and_env_profile "$FAKE_HOME" "../etc"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"invalid profile name"* ]]
+  [[ "$output" == *'$CC_SANDBOX_PROFILE'* ]]
 }

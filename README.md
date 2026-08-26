@@ -8,7 +8,7 @@ bypass permissions モードではコマンド実行やファイル削除が確�
 
 - `cc-sandbox up <project-dir>` でサンドボックスインスタンスを起動し、指定したプロジェクトディレクトリだけを `/workspace` にマウント
 - サンドボックスからホストのサービス（`127.0.0.1` / `0.0.0.0` バインドの両方）への到達を遮断しつつ、インターネットへの外向き通信は維持
-- 認証プロファイル（`--profile`）で Claude Code の認証情報を注入するので、作り直しのたびに対話ログインする必要がない。名前を省略すると既存プロファイルから対話選択できる
+- 認証プロファイル（`--profile`）で Claude Code の認証情報を注入するので、作り直しのたびに対話ログインする必要がない。名前を省略すると既存プロファイルから対話選択でき、`CC_SANDBOX_PROFILE` 環境変数（mise 等と組み合わせ可能）でプロジェクトごとに自動選択もできる
 - code-server をランダムポート・localhost のみ・パスワード認証付きで公開
 - DinD サイドカーにより、サンドボックス内で `docker run` や Testcontainers が使える（ホストの Docker デーモンは触らせない）
 - Playwright MCP サーバーが同梱済みで、Claude Code が headless ブラウザで dev サーバーの画面を検証できる
@@ -67,6 +67,26 @@ AWS_REGION=us-east-1
 このファイルは `--profile` で指定したときだけ読み込まれ、本体コンテナに環境変数として注入されます。`~/.claude/.credentials.json` のマウントは行いません。
 
 どんな名前のプロファイルを作ったか忘れてしまった場合は、`--profile` に値を渡さずに実行すると（`--profile` を末尾に置く、`--profile=` の後を空にするなど）、`~/.cc-sandbox/env.*` から見つかった名前を一覧表示し、対話的に選択できます（詳細は [ADR-0006](docs/adr/0006-interactive-profile-selection.md)）。候補が0件、非TTY環境、選択のキャンセルはいずれもエラー終了します。
+
+### `CC_SANDBOX_PROFILE`：環境変数によるプロファイルの自動選択
+
+複数のプロジェクトを掛け持ちしていて、プロジェクトごとに使うプロファイルが決まっている場合、`--profile` を毎回打つ代わりに `CC_SANDBOX_PROFILE` 環境変数をセットしておけます。`--profile` を省略したとき、この環境変数が空でなければその値がプロファイル名として使われます（詳細は [ADR-0010](docs/adr/0010-profile-selection-via-environment-variable.md)）。
+
+[mise](https://mise.jdx.dev/) の `env` でディレクトリごとに環境変数を切り替えている場合、プロジェクトのルートに置いた `mise.toml` に1行足すだけで、そのディレクトリ配下に `cd` した瞬間から自動的に対応するプロファイルが使われるようになります。
+
+```toml
+# ~/project_a/mise.toml
+[env]
+CC_SANDBOX_PROFILE = "project_a"
+```
+
+```sh
+cd ~/project_a/repo_1
+cc-sandbox up .
+# => Using profile: project_a (from $CC_SANDBOX_PROFILE)
+```
+
+明示的に `--profile <name>` を渡した場合（値を省略した対話選択を含む）は常にそちらが優先され、`CC_SANDBOX_PROFILE` は無視されます。`CC_SANDBOX_PROFILE` が指す `~/.cc-sandbox/env.<name>` が存在しない、または名前の文字種が不正な場合は、`--profile` を明示したときと同じくエラー終了します（黙ってプロファイルなしにフォールバックすることはありません）。
 
 ## セットアップ：企業CA証明書・プロキシ
 

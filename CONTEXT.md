@@ -44,6 +44,10 @@ _Avoid_: ローカル環境, マシン
 ホスト側にある、cc-sandboxのローカル状態を置くディレクトリ（Git管理外）。認証プロファイル（`env.<name>`、[ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）、企業CA証明書・`proxy.env`（後述、[ADR-0007](docs/adr/0007-corporate-ca-and-proxy-per-host-file.md)）、`install.sh`がcloneするリポジトリ本体（`src/`）をこの下に置く。
 _Avoid_: 設定ディレクトリ（何の設定か曖昧なので`~/.cc-sandbox`と明示する）
 
+**認証プロファイル**:
+`cc-sandbox up`が本体コンテナへ注入するClaude Codeの認証情報一式。実体は`~/.cc-sandbox/env.<name>`というホスト側のファイル（[ADR-0003](docs/adr/0003-auth-injection-per-host-profile.md)）で、どれを使うかは次の3通りの方法で決まり、この順に優先される: (1) `--profile <name>`で明示指定、(2) `--profile`に名前を渡さず対話的に選択（[ADR-0006](docs/adr/0006-interactive-profile-selection.md)）、(3) いずれも無ければ`CC_SANDBOX_PROFILE`環境変数（[ADR-0010](docs/adr/0010-profile-selection-via-environment-variable.md)）。`<name>`は固定の2択ではなく任意の名前を付けられるので、私的用途／業務用途だけでなく案件・クライアントごとに分けることもできる。
+_Avoid_: プロファイル（cc-sandboxには他に「プロファイル」と呼べるものが無いため単に短縮しても曖昧にはならないが、ドキュメント上は初出で必ず「認証プロファイル」とフルで書く）
+
 **企業CA証明書**:
 企業ネットワークのTLS/SSL Inspection（セキュリティ監査・脅威検知・DLP目的の中間者検査）にサンドボックスが対応するための、PEM形式の証明書1枚。ホスト側の`~/.cc-sandbox/ca-cert.crt`に置くと、本体コンテナ・DinDサイドカーの両方に自動的に適用される（[ADR-0007](docs/adr/0007-corporate-ca-and-proxy-per-host-file.md)）。認証プロファイル（`--profile`）とは独立しており、専用のCLIフラグは持たない。
 _Avoid_: ルート証明書, 社内証明書（曖昧なので「企業CA証明書」に統一）
