@@ -106,7 +106,7 @@ sandbox_up_with_home_and_env_profile() {
 @test "up --profile with a name containing unsafe characters fails clearly" {
   run sandbox_up_with_home "$FAKE_HOME" --profile "../etc"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"invalid profile name"* ]]
+  [[ "$output" == *"プロファイル名"*"が不正です"* ]]
 }
 
 @test "up --profile with a missing profile file fails clearly instead of silently skipping injection" {
@@ -123,7 +123,7 @@ sandbox_up_with_home_and_env_profile() {
 @test "up --profile with an explicit empty value fails clearly instead of silently skipping injection" {
   run sandbox_up_with_home "$FAKE_HOME" --profile ""
   [ "$status" -ne 0 ]
-  [[ "$output" == *"non-empty"* ]]
+  [[ "$output" == *"空でない値"* ]]
 }
 
 # --profile with no name (or --profile= with nothing after it) means "prompt me
@@ -135,11 +135,11 @@ sandbox_up_with_home_and_env_profile() {
 @test "up --profile with no name fails clearly in a non-interactive shell" {
   run sandbox_up_with_home "$FAKE_HOME" --profile
   [ "$status" -ne 0 ]
-  [[ "$output" == *"non-interactive shell"* ]]
+  [[ "$output" == *"非対話シェル"* ]]
 
   run sandbox_up_with_home "$FAKE_HOME" --profile=
   [ "$status" -ne 0 ]
-  [[ "$output" == *"non-interactive shell"* ]]
+  [[ "$output" == *"非対話シェル"* ]]
 }
 
 # CC_SANDBOX_PROFILE (docs/adr/0010): a profile picked up from the environment
@@ -147,7 +147,7 @@ sandbox_up_with_home_and_env_profile() {
 @test "up with no --profile falls back to CC_SANDBOX_PROFILE" {
   run sandbox_up_with_home_and_env_profile "$FAKE_HOME" "work"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'Using profile: work (from $CC_SANDBOX_PROFILE)'* ]]
+  [[ "$output" == *'使用するプロファイル: work（$CC_SANDBOX_PROFILEから）'* ]]
 
   run exec_in "printenv CLAUDE_CODE_USE_BEDROCK"
   [ "$status" -eq 0 ]
@@ -188,6 +188,6 @@ sandbox_up_with_home_and_env_profile() {
 @test "up with a CC_SANDBOX_PROFILE containing unsafe characters fails clearly and names the env var" {
   run sandbox_up_with_home_and_env_profile "$FAKE_HOME" "../etc"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"invalid profile name"* ]]
+  [[ "$output" == *"プロファイル名"*"が不正です"* ]]
   [[ "$output" == *'$CC_SANDBOX_PROFILE'* ]]
 }

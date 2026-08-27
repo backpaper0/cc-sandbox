@@ -1,51 +1,54 @@
-# End-to-end testing
+# E2Eテスト
 
-Run the complete acceptance suite with:
+受け入れテストスイート一式は次のコマンドで実行する:
 
 ```sh
 bin/test-e2e
 ```
 
-The command is the same for local runs and CI. It requires Bash, Bats, and a
-real Linux Docker daemon on which the caller can start privileged containers.
-The suite does not mock Docker: it builds the sandbox image and exercises the
-public `bin/cc-sandbox` CLI against running sandbox and DinD containers. Network
-tests also require outbound DNS and HTTPS access.
+このコマンドはローカル実行でもCIでも同じものを使う。Bash、Bats、そして
+呼び出し元が特権コンテナを起動できる実際のLinux Dockerデーモンを必要と
+する。このスイートはDockerをモックしない: サンドボックスイメージを
+ビルドし、実行中のサンドボックス・DinDコンテナに対して公開APIである
+`bin/cc-sandbox` CLIを実際に動かして検証する。ネットワーク系のテストは
+アウトバウンドのDNS・HTTPSアクセスも必要とする。
 
-The command covers the behaviors listed in the spec's Testing Decisions:
-project mounting, host-network isolation, internet access, DinD and
-Testcontainers, code-server authentication, multi-instance isolation, shared
-cache persistence, auth-profile injection, instance listing, and Playwright
-MCP navigation/screenshot/cache reuse.
+このコマンドはspecのTesting Decisionsに列挙された挙動をカバーする:
+プロジェクトのマウント、ホストネットワークからの隔離、インターネット
+アクセス、DinDとTestcontainers、code-serverの認証、複数インスタンスの
+隔離、共有キャッシュの永続化、認証プロファイルの注入、インスタンス一覧、
+Playwright MCPのナビゲーション/スクリーンショット/キャッシュ再利用。
 
-## Running from an interactive terminal
+## 対話端末から実行する場合の注意
 
-`bats`' `run` does not detach a test's stdin from the terminal it was invoked
-from. If `bin/test-e2e` is run directly at an interactive prompt (a real tty on
-stdin), `test/auth_profile_injection.bats`'s "up --profile with no name fails
-clearly in a non-interactive shell" test can spuriously fall through
-`select_profile_interactive`'s `[[ ! -t 0 ]]` guard (see
-[docs/adr/0006](adr/0006-interactive-profile-selection.md)) and land on the
-real `select` prompt, blocking on genuine keyboard input instead of failing
-fast as the test expects.
+`bats`の`run`は、テストの標準入力を実行元の端末から切り離さない。
+`bin/test-e2e`を対話プロンプト（標準入力が実際のtty）から直接実行すると、
+`test/auth_profile_injection.bats`の「up --profile with no name fails
+clearly in a non-interactive shell」というテストが、たまたま
+`select_profile_interactive`の`[[ ! -t 0 ]]`ガード（
+[docs/adr/0006](adr/0006-interactive-profile-selection.md)参照）を
+すり抜けてしまい、本物の`select`プロンプトに到達し、テストが期待する
+即座の失敗ではなく、実際のキーボード入力待ちでブロックすることがある。
 
-Run with stdin redirected away from the terminal to avoid this:
+これを避けるため、標準入力を端末から切り離して実行する:
 
 ```sh
 bin/test-e2e < /dev/null
 ```
 
-## Platform scope
+## 対象プラットフォーム
 
-The acceptance baseline is WSL2 or Linux-native Docker. The suite asserts that
-the `host.docker.internal` route is unavailable from the sandbox, but that
-assertion also passes when the hostname does not resolve. It therefore does not
-claim to verify Docker Desktop or OrbStack's macOS host-routing implementation.
-That macOS-specific bypass path remains explicitly out of scope in
-`.scratch/isolated-dev-sandbox/spec.md`.
+受け入れ基準となるのはWSL2またはLinuxネイティブのDockerである。この
+スイートはサンドボックスから`host.docker.internal`へのルートが到達
+不能であることを検証するが、そのホスト名が名前解決できない場合にも
+このアサーションは通ってしまう。そのため、Docker DesktopやOrbStackの
+macOS側ホストルーティング実装を検証していると主張するものではない。
+このmacOS固有のバイパス経路は`.scratch/isolated-dev-sandbox/spec.md`
+において引き続き明示的にスコープ外とされている。
 
-The agent execution environment used to work on this repository may expose a
-Docker daemon whose data root is backed by a nested overlay/btrfs combination.
-Such a daemon can fail image builds with `operation not permitted` or `Invalid
-cross-device link`. That is not a supported verification environment; run the
-command on the target WSL2/Linux-native Docker host instead.
+このリポジトリの作業に使われるエージェント実行環境は、ネストされた
+overlay/btrfsの組み合わせでデータルートが構成されたDockerデーモンを
+公開している場合がある。そのようなデーモンでは、イメージのビルドが
+`operation not permitted`や`Invalid cross-device link`で失敗すること
+がある。これはサポート対象の検証環境ではないため、対象のWSL2/Linux
+ネイティブDockerホスト上でコマンドを実行すること。

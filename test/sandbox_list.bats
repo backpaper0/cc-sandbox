@@ -39,7 +39,7 @@ teardown_file() {
 @test "list reports no instances and exits 0 when none are running" {
   run "$CC_SANDBOX_BIN" list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"No sandbox instances are running"* ]]
+  [[ "$output" == *"実行中のサンドボックスインスタンスはありません"* ]]
 }
 
 @test "list shows both running instances with their project dir and code-server address" {

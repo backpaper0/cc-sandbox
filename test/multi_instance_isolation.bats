@@ -68,7 +68,7 @@ teardown_file() {
 
   run "$CC_SANDBOX_BIN" up "$other_dir" --name "$NAME_A"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"already running for a different project directory"* ]]
+  [[ "$output" == *"別のプロジェクトディレクトリ"* ]]
 
   # Instance A must be untouched -- still bound to its own directory, not
   # silently recreated against $other_dir.

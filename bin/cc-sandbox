@@ -18,48 +18,51 @@ CA_CERT_DEST="${CC_SANDBOX_ROOT}/sandbox/ca-cert.crt"
 
 usage() {
   cat <<'EOF'
-Usage:
+使い方:
   bin/cc-sandbox up <project-dir> [--profile <name>] [--name <slug>] [--no-notify]
   bin/cc-sandbox down [project-dir] [--name <slug>]
   bin/cc-sandbox list
   bin/cc-sandbox exec [project-dir] [--name <slug>] [-- <command...>]
   bin/cc-sandbox password [project-dir] [--name <slug>]
 
-  up    Build and start the sandbox container, bind-mounting <project-dir> at /workspace.
-        --profile loads ~/.cc-sandbox/env.<name> (see docs/adr/0003) and injects its
-        variables into the container so Claude Code is authenticated without an
-        interactive login. <name> may be any string of letters, digits, '-', and
-        '_' -- there's no fixed set of profiles, so you can keep one per client
-        or engagement rather than just "private"/"work". Pass --profile with no
-        name (or --profile= with nothing after the '=') to pick one
-        interactively from ~/.cc-sandbox/env.* instead (see docs/adr/0006).
-        Without --profile, the CC_SANDBOX_PROFILE environment variable is used
-        instead if set and non-empty (e.g. via mise's directory-scoped env vars,
-        so it's picked up automatically after `cd`ing into a project). An
-        explicit --profile always overrides it (see docs/adr/0010).
-        --name gives the instance an explicit slug, so multiple instances (e.g. of
-        the same or different project dirs) can run side by side (see ticket 06).
-        Without --name, the instance is named after <project-dir> as before.
-        If ~/.cc-sandbox/ca-cert.crt and/or ~/.cc-sandbox/proxy.env exist, they are
-        picked up automatically (no flag needed) and applied to both the main
-        container and the DinD sidecar (see docs/adr/0007).
-        A host-side "通知ウォッチャー" starts automatically alongside the instance
-        and notifies you (a native OS notification) when Claude Code's turn
-        returns to you inside it (see docs/adr/0009). Pass --no-notify to skip it
-        for this instance.
-  down  Tear down a sandbox instance, identified by <project-dir> or by --name
-        (whichever the matching 'up' used). If neither is given, the single
-        running instance (if there is exactly one) is torn down.
-  list  Show every currently running sandbox instance: its name/slug, the
-        project directory it has mounted, its code-server address, and its
-        notification watcher's status (running / disabled / down).
-  exec  Run a command inside a running instance's container as the sandbox user
-        (default: bash, an interactive shell). Identified the same way as
-        'down': by <project-dir>, by --name, or, if both are omitted, the
-        single running instance (if there is exactly one).
+  up    サンドボックスコンテナをビルドして起動し、<project-dir>を/workspaceに
+        バインドマウントする。
+        --profileは~/.cc-sandbox/env.<name>を読み込み（docs/adr/0003参照）、その
+        変数をコンテナに注入することで、対話的なログインなしにClaude Codeを
+        認証済みにする。<name>には文字・数字・'-'・'_'から成る任意の文字列を
+        指定でき、決まったプロファイルの種類があるわけではないので、
+        "private"/"work"の2種類に限らずクライアントや案件ごとに使い分けられる。
+        --profileに名前を付けずに渡す（または'='の後に何も書かず--profile=と
+        する）と、~/.cc-sandbox/env.*から対話的に選択できる（docs/adr/0006
+        参照）。
+        --profileを指定しない場合、CC_SANDBOX_PROFILE環境変数が設定されていて
+        空でなければ代わりに使われる（例: miseのディレクトリスコープの環境変数
+        経由で、プロジェクトディレクトリに`cd`しただけで自動的に反映される）。
+        明示的な--profileは常にこれより優先される（docs/adr/0010参照）。
+        --nameはインスタンスに明示的なスラッグを付け、複数のインスタンス（同じ
+        または異なるプロジェクトディレクトリのもの）を並行して動かせるように
+        する（ticket 06参照）。--nameを省略した場合、従来通り<project-dir>から
+        インスタンス名が決まる。
+        ~/.cc-sandbox/ca-cert.crtや~/.cc-sandbox/proxy.envが存在する場合、
+        フラグ不要で自動的に取り込まれ、メインコンテナとDinDサイドカーの両方に
+        適用される（docs/adr/0007参照）。
+        ホスト側の「通知ウォッチャー」がインスタンスと同時に自動起動し、
+        Claude Codeの操作の番がユーザーに戻ってきたときにOSネイティブの通知で
+        知らせる（docs/adr/0009参照）。このインスタンスで通知を無効にしたい
+        場合は--no-notifyを渡す。
+  down  <project-dir>または--name（対応する'up'で使ったのと同じもの）で指定した
+        サンドボックスインスタンスを破棄する。どちらも指定しない場合、実行中の
+        インスタンスがちょうど1つだけならそれを破棄する。
+  list  現在実行中の全サンドボックスインスタンスを表示する: 名前/スラッグ、
+        マウントしているプロジェクトディレクトリ、code-serverのアドレス、
+        通知ウォッチャーの状態（running / disabled / down）。
+  exec  実行中のインスタンスのコンテナ内でサンドボックスユーザーとしてコマンドを
+        実行する（デフォルト: bash、対話シェル）。'down'と同じ方法で対象を
+        指定する: <project-dir>、--name、またはどちらも省略した場合は実行中の
+        インスタンスがちょうど1つだけのときにそれを対象にする。
   password
-        Print a running instance's code-server password. Identified the same
-        way as 'exec'.
+        実行中のインスタンスのcode-serverパスワードを表示する。指定方法は
+        'exec'と同じ。
 EOF
 }
 
@@ -80,23 +83,23 @@ resolve_profile_env_file() {
   local profile="$1"
   local source="${2:---profile}"
   if [[ -z "${profile}" ]]; then
-    echo "error: ${source} requires a non-empty value" >&2
+    echo "error: ${source}には空でない値が必要です" >&2
     exit 1
   fi
   if [[ ! "${profile}" =~ ^[A-Za-z0-9_-]+$ ]]; then
-    echo "error: invalid profile name '${profile}' from ${source} (use only letters, digits, '-', and '_')" >&2
+    echo "error: ${source}のプロファイル名'${profile}'が不正です（使えるのは文字・数字・'-'・'_'のみ）" >&2
     exit 1
   fi
 
   if [[ -z "${HOME:-}" ]]; then
-    echo "error: \$HOME is not set; cannot resolve ${source} ${profile}" >&2
+    echo "error: \$HOMEが設定されていないため、${source} ${profile}を解決できません" >&2
     exit 1
   fi
 
   local path="${HOME}/.cc-sandbox/env.${profile}"
   if [[ ! -f "${path}" ]]; then
-    echo "error: profile file not found: ${path}" >&2
-    echo "Create it with the '${profile}' profile's environment variables before using ${source} ${profile}." >&2
+    echo "error: プロファイルファイルが見つかりません: ${path}" >&2
+    echo "${source} ${profile}を使う前に、'${profile}'プロファイルの環境変数を書いたファイルを作成してください。" >&2
     exit 1
   fi
   echo "${path}"
@@ -111,14 +114,14 @@ resolve_profile_env_file() {
 # that capture.
 select_profile_interactive() {
   if [[ -z "${HOME:-}" ]]; then
-    echo "error: \$HOME is not set; cannot list profiles" >&2
+    echo "error: \$HOMEが設定されていないため、プロファイル一覧を表示できません" >&2
     exit 1
   fi
   # Fails closed rather than silently falling back to no profile: a non-interactive
   # caller (CI, a script) that hits this has almost certainly made a mistake, and
   # the sandbox coming up unauthenticated would be a confusing failure to debug.
   if [[ ! -t 0 ]]; then
-    echo "error: --profile needs a name in a non-interactive shell (got none to prompt for)" >&2
+    echo "error: 非対話シェルでは--profileに名前の指定が必要です（対話選択できません）" >&2
     exit 1
   fi
 
@@ -135,8 +138,8 @@ select_profile_interactive() {
   shopt -u nullglob
 
   if [[ "${#profiles[@]}" -eq 0 ]]; then
-    echo "error: no profiles found under ${dir}/env.*" >&2
-    echo "Create one before using --profile without a name." >&2
+    echo "error: ${dir}/env.*配下にプロファイルが見つかりません" >&2
+    echo "名前を指定せずに--profileを使う前に、プロファイルを作成してください。" >&2
     exit 1
   fi
 
@@ -151,17 +154,17 @@ select_profile_interactive() {
   # (which skips the loop body entirely, leaving `chosen` unset) all fall through
   # to the same "cancelled" error below rather than re-prompting forever.
   local chosen=""
-  PS3="Select a profile: "
+  PS3="プロファイルを選択してください: "
   select chosen in "${profiles[@]}"; do
     break
   done
 
   if [[ -z "${chosen}" ]]; then
-    echo "error: profile selection cancelled" >&2
+    echo "error: プロファイルの選択がキャンセルされました" >&2
     exit 1
   fi
 
-  echo "Using profile: ${chosen}" >&2
+  echo "使用するプロファイル: ${chosen}" >&2
   echo "${chosen}"
 }
 
@@ -209,7 +212,7 @@ sanitize_name() {
   # leaving a bare "-" as a project name.
   out="$(printf '%s' "${out}" | sed -e 's/^-*//' -e 's/-*$//')"
   if [[ -z "${out}" ]]; then
-    echo "error: --name must contain at least one letter or digit" >&2
+    echo "error: --nameには文字か数字を少なくとも1つ含めてください" >&2
     return 1
   fi
   echo "${out}"
@@ -266,7 +269,7 @@ check_name_not_in_use_by_other_dir() {
   # into a no-op. (Found in review: this used to run before cmd_up exported
   # PROJECT_DIR.)
   if [[ -z "${PROJECT_DIR:-}" ]]; then
-    echo "error: internal: check_name_not_in_use_by_other_dir called before PROJECT_DIR was exported" >&2
+    echo "error: internal: PROJECT_DIRがエクスポートされる前にcheck_name_not_in_use_by_other_dirが呼ばれました" >&2
     exit 1
   fi
   existing_container="$(compose "${project_name}" ps -q cc-sandbox 2>/dev/null || true)"
@@ -276,8 +279,8 @@ check_name_not_in_use_by_other_dir() {
   local existing_dir
   existing_dir="$(container_workspace_dir "${existing_container}")"
   if [[ -n "${existing_dir}" && "${existing_dir}" != "${project_dir}" ]]; then
-    echo "error: an instance named '${project_name#cc-sandbox-}' is already running for a different project directory (${existing_dir})" >&2
-    echo "Tear it down first with 'bin/cc-sandbox down --name ${project_name#cc-sandbox-}', or choose a different --name." >&2
+    echo "error: 名前'${project_name#cc-sandbox-}'のインスタンスは既に別のプロジェクトディレクトリ（${existing_dir}）で実行中です" >&2
+    echo "先に'bin/cc-sandbox down --name ${project_name#cc-sandbox-}'で破棄するか、別の--nameを指定してください。" >&2
     exit 1
   fi
 }
@@ -311,7 +314,7 @@ acquire_lock() {
     sleep 0.2
     waited=$((waited + 1))
     if [[ "${waited}" -gt 150 ]]; then
-      echo "error: timed out waiting for another '${label}' to finish" >&2
+      echo "error: 別の'${label}'の完了待ちがタイムアウトしました" >&2
       exit 1
     fi
   done
@@ -603,7 +606,7 @@ start_notify_watcher() {
   local fifo
   fifo="$(mktemp -u "${TMPDIR:-/tmp}/cc-sandbox-notify-XXXXXX")"
   if ! mkfifo "${fifo}" 2>/dev/null; then
-    echo "warning: failed to create notify watcher FIFO for '${label}'; notifications disabled for this instance" >&2
+    echo "warning: '${label}'の通知ウォッチャー用FIFOの作成に失敗しました。このインスタンスでは通知を無効にします" >&2
     return 0
   fi
 
@@ -698,7 +701,7 @@ cmd_up() {
         ;;
       --name)
         if [[ $# -lt 2 ]]; then
-          echo "error: --name requires an argument" >&2
+          echo "error: --nameには引数が必要です" >&2
           exit 1
         fi
         name="$2"
@@ -711,13 +714,13 @@ cmd_up() {
         shift
         ;;
       -*)
-        echo "error: unknown option '$1'" >&2
+        echo "error: 不明なオプション'$1'です" >&2
         usage >&2
         exit 1
         ;;
       *)
         if [[ -n "${project_dir}" ]]; then
-          echo "error: unexpected argument '$1'" >&2
+          echo "error: 予期しない引数'$1'です" >&2
           exit 1
         fi
         project_dir="$1"
@@ -727,7 +730,7 @@ cmd_up() {
   done
 
   if [[ -z "${project_dir}" ]]; then
-    echo "error: 'up' requires a project directory" >&2
+    echo "error: 'up'にはプロジェクトディレクトリが必要です" >&2
     usage >&2
     exit 1
   fi
@@ -778,7 +781,7 @@ cmd_up() {
       # command line the user just typed, so which one got used is otherwise
       # invisible -- worth surfacing given it decides which credentials get
       # injected (see docs/adr/0010).
-      echo "Using profile: ${profile} (from \$CC_SANDBOX_PROFILE)" >&2
+      echo "使用するプロファイル: ${profile}（\$CC_SANDBOX_PROFILEから）" >&2
     else
       env_file="$(resolve_profile_env_file "${profile}")"
     fi
@@ -816,13 +819,13 @@ cmd_up() {
   # Fail closed: a sandbox that came up without its isolation rules is worse than
   # no sandbox at all, since the whole point is to run Claude Code unsupervised in it.
   if [[ -z "${container_id}" ]] || ! apply_network_isolation "${container_id}"; then
-    echo "error: failed to apply network isolation for '${project_name}'; tearing down" >&2
+    echo "error: '${project_name}'へのネットワーク隔離の適用に失敗しました。破棄します" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
 
   if ! ensure_playwright_browser "${container_id}"; then
-    echo "error: failed to install the Playwright browser in '${project_name}'; tearing down" >&2
+    echo "error: '${project_name}'へのPlaywrightブラウザのインストールに失敗しました。破棄します" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
@@ -836,19 +839,19 @@ cmd_up() {
   # already set up its own chains", since that happens during its startup, before
   # the API responds.
   if ! wait_for_dind "${container_id}"; then
-    echo "error: DinD sidecar did not become ready in '${project_name}'; tearing down" >&2
+    echo "error: '${project_name}'のDinDサイドカーが準備完了になりませんでした。破棄します" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
 
   if ! apply_dind_network_isolation "${project_name}"; then
-    echo "error: failed to apply network isolation for the DinD sidecar in '${project_name}'; tearing down" >&2
+    echo "error: '${project_name}'のDinDサイドカーへのネットワーク隔離の適用に失敗しました。破棄します" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
 
   if ! apply_dind_ca_certificate "${project_name}"; then
-    echo "error: failed to install the corporate CA certificate in the DinD sidecar for '${project_name}'; tearing down" >&2
+    echo "error: '${project_name}'のDinDサイドカーへの企業CA証明書のインストールに失敗しました。破棄します" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
@@ -856,14 +859,14 @@ cmd_up() {
   # Fail closed here too: a sandbox reported as "up" whose code-server URL/password
   # don't actually work is the same confusing failure mode isolation guards against.
   if ! wait_for_code_server "${container_id}"; then
-    echo "error: code-server did not become ready in '${project_name}'; tearing down" >&2
+    echo "error: '${project_name}'のcode-serverが準備完了になりませんでした。破棄します" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
 
   local code_server_addr
   if ! code_server_addr="$(compose "${project_name}" port cc-sandbox 8080)"; then
-    echo "error: failed to resolve code-server's published port for '${project_name}'; tearing down" >&2
+    echo "error: '${project_name}'のcode-serverの公開ポートを解決できませんでした。破棄します" >&2
     compose "${project_name}" down >/dev/null 2>&1 || true
     exit 1
   fi
@@ -883,13 +886,13 @@ cmd_up() {
   fi
 
   echo
-  echo "Sandbox '${project_name}' is up."
-  echo "  Project dir:  ${project_dir} -> /workspace"
-  echo "  Enter with:   docker exec -it -u dev ${container_id} bash"
-  echo "  code-server:  http://${code_server_addr}"
-  echo "  Password:     docker exec -u dev ${container_id} grep '^password:' /home/${SANDBOX_USER}/.config/code-server/config.yaml"
+  echo "サンドボックス「${project_name}」が起動しました。"
+  echo "  プロジェクトディレクトリ: ${project_dir} -> /workspace"
+  echo "  接続方法: docker exec -it -u dev ${container_id} bash"
+  echo "  code-server: http://${code_server_addr}"
+  echo "  パスワード: docker exec -u dev ${container_id} grep '^password:' /home/${SANDBOX_USER}/.config/code-server/config.yaml"
   if [[ "${dind_cache_volume}" != "cc-sandbox-cache-docker-layers" ]]; then
-    echo "  Docker image-layer cache: instance-scoped (another running instance already holds the shared cache)"
+    echo "  Dockerイメージレイヤーキャッシュ: このインスタンス専用（別の実行中インスタンスが共有キャッシュを使用中のため）"
   fi
 }
 
@@ -906,7 +909,7 @@ cmd_down() {
     case "$1" in
       --name)
         if [[ $# -lt 2 ]]; then
-          echo "error: --name requires an argument" >&2
+          echo "error: --nameには引数が必要です" >&2
           exit 1
         fi
         name="$2"
@@ -919,13 +922,13 @@ cmd_down() {
         shift
         ;;
       -*)
-        echo "error: unknown option '$1'" >&2
+        echo "error: 不明なオプション'$1'です" >&2
         usage >&2
         exit 1
         ;;
       *)
         if [[ -n "${project_dir}" ]]; then
-          echo "error: unexpected argument '$1'" >&2
+          echo "error: 予期しない引数'$1'です" >&2
           exit 1
         fi
         project_dir="$1"
@@ -935,7 +938,7 @@ cmd_down() {
   done
 
   if [[ "${name_given}" == true && -n "${project_dir}" ]]; then
-    echo "error: pass either <project-dir> or --name, not both" >&2
+    echo "error: <project-dir>か--nameのどちらか一方だけを指定してください" >&2
     exit 1
   fi
 
@@ -957,10 +960,10 @@ cmd_down() {
     local count
     count="$(grep -c . <<<"${names}" || true)"
     if [[ -z "${names}" || "${count}" -eq 0 ]]; then
-      echo "error: no running sandbox instances found" >&2
+      echo "error: 実行中のサンドボックスインスタンスが見つかりません" >&2
       exit 1
     elif [[ "${count}" -gt 1 ]]; then
-      echo "error: multiple sandbox instances running, specify a project directory or --name:" >&2
+      echo "error: サンドボックスインスタンスが複数実行中です。プロジェクトディレクトリまたは--nameで指定してください:" >&2
       echo "${names}" >&2
       exit 1
     fi
@@ -978,7 +981,7 @@ cmd_down() {
   # code to confirm teardown is misled into thinking the instance it meant to stop
   # is gone when it's still running.
   if [[ -z "$(compose "${project_name}" ps -q cc-sandbox 2>/dev/null || true)" ]]; then
-    echo "error: no running sandbox instance found for '${project_name#cc-sandbox-}'" >&2
+    echo "error: '${project_name#cc-sandbox-}'に対応する実行中のサンドボックスインスタンスが見つかりません" >&2
     exit 1
   fi
 
@@ -1022,7 +1025,7 @@ list_row() {
 
 cmd_list() {
   if [[ $# -gt 0 ]]; then
-    echo "error: 'list' does not take any arguments" >&2
+    echo "error: 'list'は引数を取りません" >&2
     usage >&2
     exit 1
   fi
@@ -1030,7 +1033,7 @@ cmd_list() {
   local names
   names="$(running_sandbox_project_names)"
   if [[ -z "${names}" ]]; then
-    echo "No sandbox instances are running."
+    echo "実行中のサンドボックスインスタンスはありません。"
     return 0
   fi
 
@@ -1055,7 +1058,7 @@ resolve_running_instance() {
   local name_given="$3"
 
   if [[ "${name_given}" == true && -n "${project_dir}" ]]; then
-    echo "error: pass either <project-dir> or --name, not both" >&2
+    echo "error: <project-dir>か--nameのどちらか一方だけを指定してください" >&2
     return 1
   fi
 
@@ -1067,7 +1070,7 @@ resolve_running_instance() {
   if [[ -n "${project_dir}" ]]; then
     local resolved_dir
     if ! resolved_dir="$(cd "${project_dir}" 2>/dev/null && pwd -P)"; then
-      echo "error: no such directory: ${project_dir}" >&2
+      echo "error: そのようなディレクトリはありません: ${project_dir}" >&2
       return 1
     fi
     compose_project_name "${resolved_dir}"
@@ -1079,10 +1082,10 @@ resolve_running_instance() {
   local count
   count="$(grep -c . <<<"${names}" || true)"
   if [[ -z "${names}" || "${count}" -eq 0 ]]; then
-    echo "error: no running sandbox instances found" >&2
+    echo "error: 実行中のサンドボックスインスタンスが見つかりません" >&2
     return 1
   elif [[ "${count}" -gt 1 ]]; then
-    echo "error: multiple sandbox instances running, specify a project directory or --name:" >&2
+    echo "error: サンドボックスインスタンスが複数実行中です。プロジェクトディレクトリまたは--nameで指定してください:" >&2
     echo "${names}" >&2
     return 1
   fi
@@ -1103,7 +1106,7 @@ resolve_running_container() {
   local container_id
   container_id="$(container_id_for_project "${project_name}")"
   if [[ -z "${container_id}" ]]; then
-    echo "error: no running container for '${project_name#cc-sandbox-}'; run 'bin/cc-sandbox up' first" >&2
+    echo "error: '${project_name#cc-sandbox-}'に対応する実行中のコンテナがありません。先に'bin/cc-sandbox up'を実行してください" >&2
     return 1
   fi
   echo "${container_id}"
@@ -1119,7 +1122,7 @@ cmd_exec() {
     case "$1" in
       --name)
         if [[ $# -lt 2 ]]; then
-          echo "error: --name requires an argument" >&2
+          echo "error: --nameには引数が必要です" >&2
           exit 1
         fi
         name="$2"
@@ -1138,13 +1141,13 @@ cmd_exec() {
         break
         ;;
       -*)
-        echo "error: unknown option '$1'" >&2
+        echo "error: 不明なオプション'$1'です" >&2
         usage >&2
         exit 1
         ;;
       *)
         if [[ -n "${project_dir}" ]]; then
-          echo "error: unexpected argument '$1'" >&2
+          echo "error: 予期しない引数'$1'です" >&2
           exit 1
         fi
         project_dir="$1"
@@ -1182,7 +1185,7 @@ cmd_password() {
     case "$1" in
       --name)
         if [[ $# -lt 2 ]]; then
-          echo "error: --name requires an argument" >&2
+          echo "error: --nameには引数が必要です" >&2
           exit 1
         fi
         name="$2"
@@ -1195,13 +1198,13 @@ cmd_password() {
         shift
         ;;
       -*)
-        echo "error: unknown option '$1'" >&2
+        echo "error: 不明なオプション'$1'です" >&2
         usage >&2
         exit 1
         ;;
       *)
         if [[ -n "${project_dir}" ]]; then
-          echo "error: unexpected argument '$1'" >&2
+          echo "error: 予期しない引数'$1'です" >&2
           exit 1
         fi
         project_dir="$1"
@@ -1248,7 +1251,7 @@ main() {
       usage
       ;;
     *)
-      echo "error: unknown subcommand '${sub}'" >&2
+      echo "error: 不明なサブコマンド'${sub}'です" >&2
       usage >&2
       exit 1
       ;;

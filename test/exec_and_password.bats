@@ -53,13 +53,13 @@ code_server_password() {
 @test "exec rejects both a project-dir and --name at once" {
   run "$CC_SANDBOX_BIN" exec "$PROJECT_DIR" --name whatever -- true
   [ "$status" -ne 0 ]
-  [[ "$output" == *"pass either"* ]]
+  [[ "$output" == *"どちらか一方だけ"* ]]
 }
 
 @test "exec fails closed with a clear message when no instance matches" {
   run "$CC_SANDBOX_BIN" exec --name totally-bogus-name -- true
   [ "$status" -ne 0 ]
-  [[ "$output" == *"no running container"* ]]
+  [[ "$output" == *"実行中のコンテナがありません"* ]]
 }
 
 @test "password prints the same value code-server itself was configured with" {
@@ -78,5 +78,5 @@ code_server_password() {
 @test "password fails closed with a clear message when no instance matches" {
   run "$CC_SANDBOX_BIN" password --name totally-bogus-name
   [ "$status" -ne 0 ]
-  [[ "$output" == *"no running container"* ]]
+  [[ "$output" == *"実行中のコンテナがありません"* ]]
 }

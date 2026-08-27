@@ -6,40 +6,40 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ "${1:-}" == "--help" ]]; then
   cat <<'EOF'
-Usage: bin/test-e2e
+使い方: bin/test-e2e
 
-Run the complete end-to-end suite against a real Linux Docker daemon.
-The tests build images, start privileged DinD containers, and access the
-network, so they intentionally do not support a mocked Docker API.
+実際のLinux Dockerデーモンに対して、E2Eスイート一式を実行する。
+テストはイメージのビルド、特権DinDコンテナの起動、ネットワークへの
+アクセスを行うため、モックされたDocker APIには意図的に対応していない。
 EOF
   exit 0
 fi
 
 if [[ $# -ne 0 ]]; then
-  echo "error: bin/test-e2e takes no arguments" >&2
+  echo "error: bin/test-e2eは引数を取りません" >&2
   exit 1
 fi
 
 for command in docker bats; do
   if ! command -v "${command}" >/dev/null 2>&1; then
-    echo "error: required command not found: ${command}" >&2
+    echo "error: 必要なコマンドが見つかりません: ${command}" >&2
     exit 1
   fi
 done
 
 if ! docker info >/dev/null 2>&1; then
-  echo "error: Docker daemon is not available" >&2
+  echo "error: Dockerデーモンが利用できません" >&2
   exit 1
 fi
 
 docker_os="$(docker info --format '{{.OSType}}')"
 if [[ "${docker_os}" != "linux" ]]; then
-  echo "error: the E2E suite requires a Linux Docker daemon (found: ${docker_os})" >&2
+  echo "error: E2Eスイートの実行にはLinuxのDockerデーモンが必要です（検出されたのは: ${docker_os}）" >&2
   exit 1
 fi
 
-echo "Running sandbox E2E suite against Docker $(docker version --format '{{.Server.Version}}')"
-echo "Platform scope: docs/e2e-testing.md"
+echo "Docker $(docker version --format '{{.Server.Version}}')に対してサンドボックスのE2Eスイートを実行します"
+echo "対象範囲: docs/e2e-testing.md"
 
 cd "${REPO_ROOT}"
 exec bats --timing test/*.bats

@@ -11,3 +11,7 @@ Issue はローカル Markdown(`.scratch/`)で管理します。See `docs/agents
 ### Domain docs
 
 single-context 構成です。See `docs/agents/domain.md`.
+
+### 言語
+
+ヘルプ（CLIの`--help`/usage出力、エラーメッセージ）やユーザー向けドキュメント（README、`docs/e2e-testing.md`等）は日本語で書く。対象外は `docs/agents/*.md`（AIエージェント向け指示書）、コード内コメント、コミットメッセージ。詳細は [ADR-0011](docs/adr/0011-help-and-docs-in-japanese.md) を参照。

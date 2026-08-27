@@ -26,7 +26,7 @@ set -eu
 # so its default route names that interface, whatever Docker happens to call it.
 egress_iface="$(ip -o route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
 if [ -z "${egress_iface}" ]; then
-  echo "cc-sandbox-isolate-forward: could not determine the DinD sidecar's egress interface" >&2
+  echo "cc-sandbox-isolate-forward: DinDサイドカーのegressインターフェースを特定できませんでした" >&2
   exit 1
 fi
 

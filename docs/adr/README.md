@@ -12,3 +12,4 @@
 | [0008](0008-restrict-dev-sudo-to-package-management.md) | `dev`のsudoはOSパッケージ管理コマンドのみに限定する | accepted | 2026-08-26 |
 | [0009](0009-turn-notification-via-host-watcher.md) | ユーザー入力ターンの通知は、ホスト常駐の「通知ウォッチャー」が`Stop`/`idle_prompt`フックを検知する方式とする | accepted | 2026-08-26 |
 | [0010](0010-profile-selection-via-environment-variable.md) | `--profile`の自動選択は`CC_SANDBOX_PROFILE`環境変数を読む方式とし、cc-sandbox自身はディレクトリツリー探索を持たない | accepted | 2026-08-27 |
+| [0011](0011-help-and-docs-in-japanese.md) | ヘルプ・ユーザー向けドキュメントは英語ではなく日本語で統一する | accepted | 2026-08-27 |

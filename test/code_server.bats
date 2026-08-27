@@ -47,7 +47,7 @@ code_server_password() {
   local out
   out="$("$CC_SANDBOX_BIN" up "$PROJECT_DIR")"
   [[ "$out" == *"code-server:"*"http://127.0.0.1:"* ]]
-  [[ "$out" == *"Password:"*"config.yaml"* ]]
+  [[ "$out" == *"パスワード:"*"config.yaml"* ]]
 
   local addr
   addr="$(sed -n 's/^ *code-server: *http:\/\///p' <<<"$out")"
