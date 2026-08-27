@@ -24,6 +24,7 @@ usage() {
   bin/cc-sandbox list
   bin/cc-sandbox exec [project-dir] [--name <slug>] [-- <command...>]
   bin/cc-sandbox password [project-dir] [--name <slug>]
+  bin/cc-sandbox upgrade
 
   up    サンドボックスコンテナをビルドして起動し、<project-dir>を/workspaceに
         バインドマウントする。
@@ -63,6 +64,12 @@ usage() {
   password
         実行中のインスタンスのcode-serverパスワードを表示する。指定方法は
         'exec'と同じ。
+  upgrade
+        cc-sandbox自身を最新版に更新する（今実行しているスクリプトが属する
+        リポジトリをgit pullする。install.sh経由でインストールした環境でも
+        開発クローンを直接実行している環境でも同じ）。ローカルの変更/コミット
+        などでfast-forward更新できない場合はエラーになる（docs/adr/0012
+        参照）。
 EOF
 }
 
@@ -1224,6 +1231,34 @@ cmd_password() {
     | sed 's/^password: *//'
 }
 
+# Updates CC_SANDBOX_ROOT in place rather than the fixed ~/.cc-sandbox/src that
+# install.sh uses, so this works the same whether cc-sandbox was installed via
+# install.sh or is a development clone being run directly (docs/adr/0012).
+# Uses --ff-only (unlike install.sh's plain `git pull`) so a development clone
+# with local commits fails safely instead of gaining an unexpected merge
+# commit.
+cmd_upgrade() {
+  if [[ $# -gt 0 ]]; then
+    echo "error: 'upgrade'は引数を取りません" >&2
+    usage >&2
+    exit 1
+  fi
+
+  if ! git -C "${CC_SANDBOX_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "error: ${CC_SANDBOX_ROOT}はgitリポジトリではないため、'upgrade'では更新できません。" >&2
+    echo "install.shを使ってインストールし直してください。" >&2
+    exit 1
+  fi
+
+  if ! git -C "${CC_SANDBOX_ROOT}" pull --ff-only; then
+    echo "error: 最新版への更新に失敗しました（fast-forwardできませんでした）。" >&2
+    echo "${CC_SANDBOX_ROOT}にローカルの変更やコミットが残っていないか確認してください。" >&2
+    exit 1
+  fi
+
+  echo "cc-sandboxを最新版に更新しました。"
+}
+
 main() {
   local sub="${1:-}"
   case "${sub}" in
@@ -1246,6 +1281,10 @@ main() {
     password)
       shift
       cmd_password "$@"
+      ;;
+    upgrade)
+      shift
+      cmd_upgrade "$@"
       ;;
     -h | --help | "")
       usage

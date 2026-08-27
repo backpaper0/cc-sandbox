@@ -31,6 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/backpaper0/cc-sandbox/main/install.
 
 リポジトリを `~/.cc-sandbox/src` に clone し（既にあれば `git pull` で更新）、`bin/cc-sandbox` を `~/.local/bin/cc-sandbox` へ symlink します（詳細は [ADR-0005](docs/adr/0005-install-script-fixed-clone-and-symlink.md)）。再実行すれば最新版に更新されます。`~/.local/bin` が PATH に無い場合は、追加すべき設定をインストーラが案内します。
 
+インストール後は、この `curl | bash` を再実行する代わりに `cc-sandbox upgrade` でも最新版に更新できます（詳細は [ADR-0012](docs/adr/0012-upgrade-subcommand-ff-only-on-running-repo.md)）。
+
 以降の使い方はすべて、インストール後に PATH の通った `cc-sandbox` コマンドを前提にしています。リポジトリ自体を手元に clone して開発している場合は、代わりに `bin/cc-sandbox` を直接実行してください。
 
 ## セットアップ：認証プロファイル
@@ -118,6 +120,7 @@ cc-sandbox down [project-dir] [--name <slug>]
 cc-sandbox list
 cc-sandbox exec [project-dir] [--name <slug>] [-- <command...>]
 cc-sandbox password [project-dir] [--name <slug>]
+cc-sandbox upgrade
 ```
 
 ### 起動
@@ -218,6 +221,14 @@ cc-sandbox exec --name feature-a         # --nameで起動したものを指定
 cc-sandbox exec -- ls -la /workspace     # 任意コマンドを実行（--以降がそのまま渡る）
 cc-sandbox password ~/work/my-project    # code-serverのパスワードの値だけを出力
 ```
+
+### アップグレード
+
+```sh
+cc-sandbox upgrade
+```
+
+`curl | bash` を再実行しなくても、`cc-sandbox` コマンド自体を最新版に更新できます。今実行している `cc-sandbox` が属するリポジトリに対して `git pull --ff-only` するだけなので、`install.sh` でインストールした環境・開発クローンを直接実行している環境のどちらでも動きます（詳細は [ADR-0012](docs/adr/0012-upgrade-subcommand-ff-only-on-running-repo.md)）。
 
 ## サンドボックスの中身
 
