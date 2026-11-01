@@ -1,0 +1,19 @@
+onboarding = false
+
+[theme]
+name = "rose-pine-dawn"
+auto_switch = false
+
+[terminal]
+# ログインシェルで起動し、~/.profile 経由で ~/.bashrc（mise activate）を読み込ませる
+shell_mode = "login"
+
+[ui.sound]
+enabled = false
+
+[ui]
+status_indicators = "symbols"
+
+[ui.toast]
+delivery = "terminal"
+delay_seconds = 1

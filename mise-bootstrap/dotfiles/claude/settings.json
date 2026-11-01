@@ -1,0 +1,14 @@
+{
+  "awaySummaryEnabled": false,
+  "cleanupPeriodDays": 9999,
+  "disableRemoteControl": true,
+  "language": "japanese",
+  "spinnerTipsEnabled": false,
+  "statusLine": {
+    "command": "~/.claude/statusline.sh",
+    "padding": 0,
+    "type": "command"
+  },
+  "theme": "light",
+  "tui": "default"
+}

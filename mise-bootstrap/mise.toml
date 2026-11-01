@@ -1,0 +1,84 @@
+# mise bootstrap の設定。
+# provisioning/orbstack/provisioning.sh がこのディレクトリをマシンへ転送し、
+# MISE_CONFIG_FILE にこのファイルを指定して `mise bootstrap` を実行する。
+
+# シェルでの mise activate は、provisioning.sh で mise をインストールするときに
+# mise.run/bash が ~/.bashrc へフルパスで追記するので、ここでは設定しない
+
+# Docker 公式の apt リポジトリ。
+# fingerprint は Docker が公開している GPG 鍵のフィンガープリントで、取得した鍵の検証に使う
+[bootstrap.apt.sources.docker]
+uris = "https://download.docker.com/linux/ubuntu"
+components = "stable"
+key = "https://download.docker.com/linux/ubuntu/gpg"
+fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
+
+# apt で入れるパッケージ。mise で入れるツールは config/mise/config.toml 側で管理する
+[bootstrap.packages]
+"apt:docker-ce" = "latest"
+"apt:docker-ce-cli" = "latest"
+"apt:containerd.io" = "latest"
+"apt:docker-buildx-plugin" = "latest"
+"apt:docker-compose-plugin" = "latest"
+"apt:git" = "latest"
+"apt:vim" = "latest"
+"apt:fonts-noto-cjk" = "latest" # 日本語を表示するためのフォント
+
+[bootstrap.services.docker]
+state = "running"
+enabled = true
+
+# bootstrap 時に実行するタスク
+[tasks.bootstrap]
+depends = ["bootstrap:claude", "bootstrap:python"]
+
+# Claude Code をネイティブ版インストーラーで入れる。
+# インストール済みならスキップする（更新は upgrade-all や Claude Code 自身の自動更新に任せる）
+[tasks."bootstrap:claude"]
+skip_if = "command -v claude"
+run = "curl -fsSL https://claude.ai/install.sh | bash"
+
+# uv 管理の Python を入れる。--default で python / python3 コマンドも ~/.local/bin に置かれる。
+# uv 自体は config/mise/config.toml で mise から入れている
+[tasks."bootstrap:python"]
+run = "uv python install --default"
+
+# sudo なしで docker を使えるよう docker グループに追加する。
+# グループの変更は再ログイン後に反映される
+[bootstrap.hooks.post-packages]
+run = '''
+if ! id -nG | grep -qw docker; then
+    sudo usermod -aG docker "$(id -un)"
+fi
+'''
+
+# 実行権限を付けて置きたいファイルは [dotfiles] ではなく [bootstrap.files] で配置する。
+# 配置先の親ディレクトリはパーミッションを指定して先に作っておく
+[bootstrap.directories."~/.local"]
+mode = "0755"
+
+[bootstrap.directories."~/.local/bin"]
+mode = "0755"
+
+[bootstrap.files."~/.local/bin/upgrade-all"]
+source = "./bin/upgrade-all"
+mode = "0755"
+
+[bootstrap.directories."~/.claude"]
+mode = "0755"
+
+[bootstrap.files."~/.claude/statusline.sh"]
+source = "dotfiles/claude/statusline.sh"
+mode = "0755"
+
+# 設定ファイルの配置。
+# provisioning.sh は bootstrap 後に転送したディレクトリを削除するので、
+# シンボリックリンクではなく copy（コピー）で配置する。
+# template は Tera テンプレートとして展開する（環境変数は provisioning.sh から渡す）
+[dotfiles]
+"~/.claude/settings.json" = { source = "dotfiles/claude/settings.json", mode = "copy" }
+"~/.config/herdr/config.toml" = { source = "config/herdr/config.toml", mode = "copy" }
+"~/.config/mise/config.toml" = { source = "config/mise/config.toml", mode = "copy" }
+"~/.config/uv/uv.toml" = { source = "config/uv/uv.toml", mode = "copy" }
+"~/.gitconfig" = { source = "dotfiles/gitconfig.tera", mode = "template" }
+"~/.vimrc" = { source = "dotfiles/vimrc", mode = "copy" }

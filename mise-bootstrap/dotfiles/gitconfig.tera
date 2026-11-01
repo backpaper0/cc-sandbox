@@ -1,0 +1,19 @@
+{# 環境変数 GIT_USER_NAME / GIT_USER_EMAIL は provisioning.sh がホストの git config から渡す #}
+[user]
+    name = {{ env.GIT_USER_NAME }}
+    email = {{ env.GIT_USER_EMAIL }}
+[core]
+    editor = vim
+    quotepath = false
+[init]
+    defaultBranch = main
+[color]
+    ui = auto
+[alias]
+    co = checkout
+    ci = commit
+    st = status
+    br = branch
+    lg = log --graph --decorate --branches
+    # 直前のコミットにステージ済みの変更を取り込み、作者と日時を自分・現在時刻に更新する
+    ca = commit --amend --no-edit --reset-author

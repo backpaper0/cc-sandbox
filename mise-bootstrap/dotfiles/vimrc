@@ -1,0 +1,15 @@
+" ちょっとした編集ができれば十分という想定
+set encoding=utf-8
+set fileencodings=utf-8,cp932,euc-jp
+syntax on
+filetype plugin indent on
+set number
+set expandtab
+set tabstop=2
+set shiftwidth=2
+set incsearch
+set hlsearch
+set ignorecase
+set smartcase
+set backspace=indent,eol,start
+set laststatus=2

@@ -1,0 +1,5 @@
+# 公開から 24 時間未満のパッケージは解決対象から外す。
+# 公開直後に発覚することが多い、悪意あるリリース（サプライチェーン攻撃）を避けるため
+exclude-newer = "24 hours"
+# OS の Python は使わず、uv が管理する Python だけを使う
+python-preference = "only-managed"

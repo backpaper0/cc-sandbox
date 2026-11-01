@@ -1,0 +1,5 @@
+# グローバルに使うツール。"latest" は更新されないので、mise upgrade で更新する（bin/upgrade-all 参照）
+[tools]
+herdr = "latest"
+jq = "latest" # dotfiles/claude/statusline.sh で使う
+uv = "latest"

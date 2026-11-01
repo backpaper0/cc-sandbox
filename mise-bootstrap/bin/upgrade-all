@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# マシン内のパッケージ・ツールをまとめて更新する
+set -euo pipefail
+
+echo "==> apt"
+sudo apt update
+sudo apt upgrade --yes
+sudo apt autoremove --yes
+
+echo "==> mise"
+mise self-update --yes
+# config/mise/config.toml の "latest" 指定のツールを更新する
+mise upgrade
+
+echo "==> Python (uv)"
+uv python upgrade
+
+if command -v claude > /dev/null 2>&1; then
+    echo "==> Claude Code"
+    claude update
+fi
