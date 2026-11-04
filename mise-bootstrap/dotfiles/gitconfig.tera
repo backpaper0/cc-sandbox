@@ -1,7 +1,16 @@
-{# 環境変数 GIT_USER_NAME / GIT_USER_EMAIL は provisioning.sh がホストの git config から渡す #}
+{# 環境変数 GIT_USER_NAME / GIT_USER_EMAIL は provisioning.sh がホストの git config から渡す -#}
+{# 環境変数 GIT_USER_SIGNINGKEY は任意。設定されていればコミット・タグに署名する -#}
+{% set signingkey = env.GIT_USER_SIGNINGKEY | default(value="") -%}
 [user]
     name = {{ env.GIT_USER_NAME }}
     email = {{ env.GIT_USER_EMAIL }}
+{%- if signingkey %}
+    signingkey = {{ signingkey }}
+[commit]
+    gpgsign = true
+[tag]
+    gpgsign = true
+{%- endif %}
 [core]
     editor = vim
     quotepath = false

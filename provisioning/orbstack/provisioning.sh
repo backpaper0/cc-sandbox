@@ -6,6 +6,9 @@
 # 必要な環境変数:
 #   MACHINE_NAME  作成・プロビジョニングするマシンの名前
 #   MACHINE_USER  マシン内に作成するユーザー名（作成時のみ使用）
+#
+# 任意の環境変数:
+#   GIT_USER_SIGNINGKEY  マシン内でコミット・タグの署名に使う鍵（設定されていれば署名を有効にする）
 set -euox pipefail
 
 # リポジトリのルートへ移動する（どこから実行しても相対パスが通るように）
@@ -42,7 +45,8 @@ orb -m "$MACHINE_NAME" "$WORK_DIR/provisioning/scripts/install-mise.sh"
 # `git config get` は Git 2.46 以降のサブコマンド
 GIT_USER_NAME="$(git config get user.name)" \
 GIT_USER_EMAIL="$(git config get user.email)" \
-ORBENV=GIT_USER_NAME:GIT_USER_EMAIL \
+GIT_USER_SIGNINGKEY="${GIT_USER_SIGNINGKEY:-}" \
+ORBENV=GIT_USER_NAME:GIT_USER_EMAIL:GIT_USER_SIGNINGKEY \
 orb -m "$MACHINE_NAME" "$WORK_DIR/provisioning/scripts/run-mise-bootstrap.sh" "$WORK_DIR/mise-bootstrap"
 
 # 後片付け（dotfiles は copy で配置しているので、設定ディレクトリを消しても問題ない）
