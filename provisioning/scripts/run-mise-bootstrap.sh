@@ -7,6 +7,9 @@
 # 必要な環境変数（dotfiles/gitconfig.tera の展開に使う）:
 #   GIT_USER_NAME   Git のユーザー名
 #   GIT_USER_EMAIL  Git のメールアドレス
+#
+# 任意の環境変数:
+#   GIT_USER_SIGNINGKEY  コミット・タグの署名に使う鍵（設定されていれば署名を有効にする）
 set -euo pipefail
 
 CONFIG_DIR="${1:?mise-bootstrap ディレクトリを指定してください}"

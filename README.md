@@ -23,6 +23,7 @@ MACHINE_NAME="pirateship" MACHINE_USER="ichimi" ./provisioning/orbstack/provisio
 | --- | --- |
 | `MACHINE_NAME` | 作成する OrbStack マシンの名前 |
 | `MACHINE_USER` | マシン内に作成するユーザー名 |
+| `GIT_USER_SIGNINGKEY` | 任意。マシン内でコミット・タグの署名に使う鍵。設定されていれば `~/.gitconfig` に `user.signingkey` と `commit.gpgsign` / `tag.gpgsign` を入れる |
 
 スクリプトは次の処理を行う。
 
@@ -77,7 +78,7 @@ apt パッケージ、mise 本体と mise 管理のツール、uv 管理の Pyth
 | `~/.config/herdr/config.toml` | `config/herdr/config.toml` | herdr（コーディングエージェント向けターミナルマルチプレクサ）の設定 |
 | `~/.config/mise/config.toml` | `config/mise/config.toml` | グローバルに使うツール |
 | `~/.config/uv/uv.toml` | `config/uv/uv.toml` | 公開から 24 時間未満のパッケージを除外、Python は uv 管理版のみ使用 |
-| `~/.gitconfig` | `dotfiles/gitconfig.tera` | テンプレート。ホストの Git ユーザー情報を埋め込む |
+| `~/.gitconfig` | `dotfiles/gitconfig.tera` | テンプレート。ホストの Git ユーザー情報を埋め込む。`GIT_USER_SIGNINGKEY` があれば署名も有効にする |
 | `~/.vimrc` | `dotfiles/vimrc` | ちょっとした編集向けの最小構成 |
 | `~/.local/bin/upgrade-all` | `bin/upgrade-all` | 一括更新スクリプト |
 
@@ -109,6 +110,8 @@ apt パッケージ、mise 本体と mise 管理のツール、uv 管理の Pyth
 ./provisioning/scripts/install-mise.sh
 GIT_USER_NAME="..." GIT_USER_EMAIL="..." ./provisioning/scripts/run-mise-bootstrap.sh ./mise-bootstrap
 ```
+
+コミット署名を有効にする場合は `GIT_USER_SIGNINGKEY="..."` も渡す。
 
 ## カスタマイズ
 
