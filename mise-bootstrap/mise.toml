@@ -1,4 +1,8 @@
 # mise bootstrap の設定。
+[bootstrap.services.docker]
+state = "running"
+enabled = true
+
 # provisioning/orbstack/provisioning.sh がこのディレクトリをマシンへ転送し、
 # MISE_CONFIG_FILE にこのファイルを指定して `mise bootstrap` を実行する。
 
@@ -20,17 +24,16 @@ fingerprint = "9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88"
 "apt:containerd.io" = "latest"
 "apt:docker-buildx-plugin" = "latest"
 "apt:docker-compose-plugin" = "latest"
+"apt:uidmap" = "latest"
 "apt:git" = "latest"
 "apt:vim" = "latest"
 "apt:fonts-noto-cjk" = "latest" # 日本語を表示するためのフォント
-
-[bootstrap.services.docker]
-state = "running"
-enabled = true
+"apt:gnupg" = "latest"
+"apt:pass" = "latest"
 
 # bootstrap 時に実行するタスク
 [tasks.bootstrap]
-depends = ["bootstrap:claude", "bootstrap:python"]
+depends = ["bootstrap:claude", "bootstrap:python", "bootstrap:rootless-docker"]
 
 # Claude Code をネイティブ版インストーラーで入れる。
 # インストール済みならスキップする（更新は upgrade-all や Claude Code 自身の自動更新に任せる）
@@ -43,13 +46,17 @@ run = "curl -fsSL https://claude.ai/install.sh | bash"
 [tasks."bootstrap:python"]
 run = "uv python install --default"
 
-# sudo なしで docker を使えるよう docker グループに追加する。
-# グループの変更は再ログイン後に反映される
-[bootstrap.hooks.post-packages]
+# rootless docker を入れる。
+# dockerd-rootless-setuptool.sh install が作るユーザー systemd ユニットがあれば
+# インストール済みとみなしてスキップする（/etc/subuid などへの重複追記も防ぐ）
+[tasks."bootstrap:rootless-docker"]
+skip_if = 'test -f "$HOME/.config/systemd/user/docker.service"'
 run = '''
-if ! id -nG | grep -qw docker; then
-    sudo usermod -aG docker "$(id -un)"
-fi
+sudo systemctl disable --now docker.service docker.socket
+sudo rm /var/run/docker.sock
+echo "${USER}:100000:65536" | sudo tee -a /etc/subuid
+echo "${USER}:100000:65536" | sudo tee -a /etc/subgid
+dockerd-rootless-setuptool.sh install
 '''
 
 # 実行権限を付けて置きたいファイルは [dotfiles] ではなく [bootstrap.files] で配置する。
